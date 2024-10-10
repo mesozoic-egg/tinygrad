@@ -2092,8 +2092,12 @@ class Tensor:
     n1, n2 = len(self.shape), len(w.shape)
     assert n1 != 0 and n2 != 0, f"both arguments to matmul need to be at least 1D, but they are {n1}D and {n2}D"
     if (L:=self.shape[-1]) != (R:=w.shape[-min(n2, 2)]): raise AssertionError(f"shapes {self.shape} and {w.shape} cannot be multiplied ({L} != {R})")
-    x = self.reshape(*self.shape[0:-1], *[1]*min(n1-1, n2-1, 1), self.shape[-1])
-    w = w.reshape(*w.shape[0:-2], *[1]*min(n1-1, n2-1, 1), *w.shape[-min(n2, 2):]).transpose(-1, -min(n2, 2))
+    reshape_args = (*self.shape[0:-1], *[1]*min(n1-1, n2-1, 1), self.shape[-1])
+    x = self.reshape(*reshape_args)
+    reshape_args = *w.shape[0:-2], *[1]*min(n1-1, n2-1, 1), *w.shape[-min(n2, 2):]
+    w = w.reshape(reshape_args)
+    transpose_args = (-1, -min(n2, 2))
+    w = w.transpose(*transpose_args)
     return (x*w).sum(-1, acc_dtype=acc_dtype).cast(least_upper_dtype(x.dtype, w.dtype) if acc_dtype is None else acc_dtype)
 
   def matmul(self, x:Tensor, reverse=False, acc_dtype:Optional[DTypeLike]=None) -> Tensor:
@@ -2991,11 +2995,16 @@ class Tensor:
     print((cond > 0).where(cond, -float("inf")).numpy())
     ```
     """
-    if isinstance(x, Tensor): x, y = x._broadcasted(y)
-    elif isinstance(y, Tensor): y, x = y._broadcasted(x)
+    if isinstance(x, Tensor):
+      x, y = x._broadcasted(y)
+    elif isinstance(y, Tensor):
+      y, x = y._broadcasted(x)
     cond, x = self._broadcasted(x, match_dtype=False)
     cond, y = cond._broadcasted(y, match_dtype=False)
-    return F.Where.apply(cond.cast(dtypes.bool), *x._broadcasted(y))
+    x, y = x._broadcasted(y)
+    shape = x.shape
+    cond = cond._broadcast_to(shape)
+    return F.Where.apply(cond.cast(dtypes.bool), x, y)
 
   def masked_fill(self:Tensor, mask:Tensor, value:Union[Tensor, ConstType]): return mask.where(value, self)
 

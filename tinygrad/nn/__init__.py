@@ -165,11 +165,11 @@ class Linear:
   """
   def __init__(self, in_features, out_features, bias=True):
     bound = 1 / math.sqrt(in_features)
-    self.weight = Tensor.uniform(out_features, in_features, low=-bound, high=bound)
+    self.weight = Tensor.uniform(in_features, out_features, low=-bound, high=bound)
     self.bias = Tensor.uniform(out_features, low=-bound, high=bound) if bias else None
 
   def __call__(self, x:Tensor):
-    return x.linear(self.weight.transpose(), self.bias)
+    return x.linear(self.weight, self.bias)
 
 class GroupNorm:
   """

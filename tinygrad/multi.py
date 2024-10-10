@@ -129,6 +129,14 @@ class MultiLazyBuffer(MathTrait):
   # *** movement ops ***
 
   def _shape_to_single_shard(self, shape:Tuple[sint, ...], lb:LazyBuffer) -> Tuple[sint, ...]:
+    _shape = []
+    for a,s in enumerate(shape):
+      if a == self.axis:
+        _s = lb.shape[self.axis]
+        _shape.append(_s)
+      else:
+        _shape.append(s)
+    return tuple(_shape)
     return tuple(lb.shape[self.axis] if a == self.axis else s for a,s in enumerate(shape))
 
   def reshape(self, arg:Tuple[sint, ...]):
@@ -157,8 +165,13 @@ class MultiLazyBuffer(MathTrait):
 
   def expand(self, arg:Tuple[sint, ...]):
     # NOTE: this assert isn't needed, sharded axis can have dim 1
-    assert self.axis is None or arg[self.axis] == self.shape[self.axis], f"expand not supported on sharded axis {arg=}"
-    return MultiLazyBuffer([x.expand(self._shape_to_single_shard(arg, x)) for x in self.lbs], self.axis, self.real)
+    # assert self.axis is None or arg[self.axis] == self.shape[self.axis], f"expand not supported on sharded axis {arg=}"
+    lbs = []
+    for x in self.lbs:
+      _arg = self._shape_to_single_shard(arg, x)
+      expanded = x.expand(_arg)
+      lbs.append(expanded)
+    return MultiLazyBuffer(lbs, self.axis, self.real)
 
   def permute(self, arg:Tuple[int, ...]):
     # all permutes supported!
