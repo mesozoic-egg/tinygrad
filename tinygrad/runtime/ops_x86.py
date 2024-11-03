@@ -14,7 +14,6 @@ class ClangCompiler(Compiler):
     super().__init__(cachekey)
 
   def compile(self, src:str) -> bytes:
-    print("hi", self.args)
     # TODO: remove file write. sadly clang doesn't like the use of /dev/stdout here
     # with tempfile.NamedTemporaryFile(delete=True) as output_file:
     #   subprocess.check_output(['clang', '-S', *self.args, '-O2', '-Wall', '-Werror', '-x', 'c', '-fPIC', '-ffreestanding', '-nostdlib',
@@ -23,17 +22,21 @@ class ClangCompiler(Compiler):
     #   print("asm code")
     #   print(asm.decode())
 
-    # with tempfile.NamedTemporaryFile(delete=True) as output_file:
-    #   subprocess.check_output(['clang', '-shared', *self.args, '-O2', '-Wall', '-Werror', '-x', 'c', '-fPIC', '-ffreestanding', '-nostdlib',
-    #                            '-', '-o', str(output_file.name)], input=src.encode('utf-8'))
-    #   return pathlib.Path(output_file.name).read_bytes()
+    with tempfile.NamedTemporaryFile(delete=False) as output_file:
+      subprocess.check_output(['clang', '-S', '-O2', '-Wall', '-Werror', '-x', 'c', '-fPIC', '-ffreestanding', '-nostdlib',
+                               '-', '-o', str(output_file.name)], input=src.encode('utf-8'))
+      ret = pathlib.Path(output_file.name).read_bytes()
+      print(ret.decode())
+      # return ret
+    with tempfile.NamedTemporaryFile(delete=False) as output_file:
+      print("filename", output_file.name)
+      subprocess.check_output(['clang', '-O2', '-Wall', '-Werror', '-c', '-E', '-fPIC', '-ffreestanding', '-nostdlib',
+                               '-', '-o', str(output_file.name)], input=ret)
+      return pathlib.Path(output_file.name).read_bytes()
     # with tempfile.NamedTemporaryFile(delete=True) as output_file:
     #   subprocess.check_output(['as', '-shared', *self.args, '-O2', '-Wall', '-Werror', '-x', 'c', '-fPIC', '-ffreestanding', '-nostdlib',
     #                            '-', '-o', str(output_file.name)], input=src.encode('utf-8'))
     #   return pathlib.Path(output_file.name).read_bytes()
-    
-    with open("temp/add2.o", "rb") as output_file:
-      return output_file.read()
 
 class ClangProgram:
   def __init__(self, name:str, lib:bytes):
