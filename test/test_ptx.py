@@ -21,7 +21,6 @@ def render(ast: UOp, PTX_CSTYLE: bool=False):
 def compare_ptx(a: Tensor):
   ast = schedule(a)
   src0 = render(ast)
-  print(src0)
   src1 = render(ast, PTX_CSTYLE=True)
   if src0 != src0:
     print("src0")
