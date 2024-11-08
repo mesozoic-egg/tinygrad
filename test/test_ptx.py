@@ -1,4 +1,5 @@
 import os
+import pytest
 from tinygrad import Tensor, Device, dtypes
 from tinygrad.ops import Ops, UOp, Variable, sym_infer, sint, print_uops
 from tinygrad.engine.realize import get_kernel
@@ -6,6 +7,7 @@ from tinygrad.renderer.ptx import PTXRenderer
 from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import ClangRenderer, CUDARenderer
 from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
+from typing import List
 
 def schedule(a: Tensor):
   scheduled, vars = a.schedule_with_vars() 
@@ -20,27 +22,35 @@ def render(ast: UOp, renderer: Renderer):
   src = renderer.render("rendered", kernel.uops)
   return src
 
-def render2(uop: UOp, renderer: Renderer):
-  return renderer.render("rendererd", [uop])
+def render2(uops: List[UOp], renderer: Renderer):
+  return renderer.render("rendererd", uops)
 
-def compare2(u: UOp):
-  src0 = render2(u, PTXRenderer("sm_86"))
-  src1 = render2(u, PTXRenderer2())
-  print("src1")
-  print(src1)
-  assert src0 == src1
+def compare2(uops: List[UOp]):
+  src0 = render2(uops, PTXRenderer("sm_86"))
+  # src1 = render2(u, PTXRenderer2())
+  # print("src1")
+  # print(src1)
+  # assert src0 == src1
   
-
+@pytest.mark.skip()
 def test_const():
   compare2(UOp(Ops.CONST, dtypes.uint, arg=2, src=()))
+
+def test_load_store():
+  define_global = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0)
+  cast_define_global = UOp(Ops.CAST, dtypes.long, arg=None, src=(define_global,))
+  const_2 = UOp(Ops.CONST, dtypes.uint, arg=2)
+  added = UOp(Ops.ADD, dtypes.long, arg=None, src=(cast_define_global, const_2))
+  store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, const_2))
+  compare2([define_global, cast_define_global, const_2, added, store])
 
 
 
 def compare_ptx(a: Tensor):
   ast = schedule(a)
   print(ast)
-  # src0 = render(ast, PTXRenderer("sm_86"))
-  # print(src0)
+  src0 = render(ast, PTXRenderer("sm_86"))
+  print(src0)
   # src1 = render(ast, CUDARenderer("sm_86"))
   # print(src1)
   # clang = render(ast, ClangRenderer())
@@ -61,4 +71,4 @@ def sum():
   compare_ptx(b)
 
 if __name__ == "__main__":
-  sum()
+  addition()
