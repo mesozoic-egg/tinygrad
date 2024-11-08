@@ -26,6 +26,8 @@ def render2(uop: UOp, renderer: Renderer):
 def compare2(u: UOp):
   src0 = render2(u, PTXRenderer("sm_86"))
   src1 = render2(u, PTXRenderer2())
+  print("src1")
+  print(src1)
   assert src0 == src1
   
 
