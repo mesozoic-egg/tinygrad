@@ -9,6 +9,9 @@ from tinygrad.renderer.cstyle import ClangRenderer, CUDARenderer
 from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
 from typing import List
 
+clang_renderer = ClangRenderer()
+cuda_renderer = CUDARenderer("sm_86")
+ptx_renderer = PTXRenderer("sm_86")
 def schedule(a: Tensor):
   scheduled, vars = a.schedule_with_vars() 
   for si in scheduled:
@@ -27,6 +30,7 @@ def render2(uops: List[UOp], renderer: Renderer):
 
 def compare2(uops: List[UOp]):
   src0 = render2(uops, PTXRenderer("sm_86"))
+  print(src0)
   # src1 = render2(u, PTXRenderer2())
   # print("src1")
   # print(src1)
@@ -42,7 +46,10 @@ def test_load_store():
   const_2 = UOp(Ops.CONST, dtypes.uint, arg=2)
   added = UOp(Ops.ADD, dtypes.long, arg=None, src=(cast_define_global, const_2))
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, const_2))
-  compare2([define_global, cast_define_global, const_2, added, store])
+  uops = [define_global, cast_define_global, const_2, added, store]
+  print(render2(uops, cuda_renderer))
+  print(render2(uops, ptx_renderer))
+
 
 
 
