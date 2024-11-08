@@ -20,6 +20,7 @@ def render(ast: UOp, renderer: Renderer):
 
 def compare_ptx(a: Tensor):
   ast = schedule(a)
+  print(ast)
   src0 = render(ast, PTXRenderer("sm_86"))
   print(src0)
   src1 = render(ast, CUDARenderer("sm_86"))
