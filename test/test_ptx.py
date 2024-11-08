@@ -37,17 +37,15 @@ def compare2(uops: List[UOp]):
   # print(src1)
   # assert src0 == src1
   
-@pytest.mark.skip()
 def test_const():
-  compare2(UOp(Ops.CONST, dtypes.uint, arg=2, src=()))
+  store()
 
-def test_load_store():
+def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   define_global = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0)
   special = UOp(Ops.SPECIAL, dtypes.int, arg=('gidx0', 16), src=())
-  const_2 = UOp(Ops.CONST, dtypes.uint, arg=2)
   added = UOp(Ops.ADD, dtypes.long, arg=None, src=(define_global, special))
-  store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, const_2))
-  uops = [define_global, special, const_2, added, store]
+  store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
+  uops = [define_global, special, added] + uops + [store]
   print(render2(uops, cuda_renderer))
   print(render2(uops, ptx_renderer))
 
