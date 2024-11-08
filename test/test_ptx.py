@@ -22,6 +22,7 @@ def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
   print_uops(kernel.uops)
+  print(kernel.uops[-1])
   src = renderer.render("rendered", kernel.uops)
   return src
 
@@ -42,11 +43,11 @@ def test_const():
 
 def test_load_store():
   define_global = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0)
-  cast_define_global = UOp(Ops.CAST, dtypes.long, arg=None, src=(define_global,))
+  special = UOp(Ops.SPECIAL, dtypes.int, arg=('gidx0', 16), src=())
   const_2 = UOp(Ops.CONST, dtypes.uint, arg=2)
-  added = UOp(Ops.ADD, dtypes.long, arg=None, src=(cast_define_global, const_2))
+  added = UOp(Ops.ADD, dtypes.long, arg=None, src=(define_global, special))
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, const_2))
-  uops = [define_global, cast_define_global, const_2, added, store]
+  uops = [define_global, special, const_2, added, store]
   print(render2(uops, cuda_renderer))
   print(render2(uops, ptx_renderer))
 
