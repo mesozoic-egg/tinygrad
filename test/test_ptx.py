@@ -12,6 +12,7 @@ from typing import List
 clang_renderer = ClangRenderer()
 cuda_renderer = CUDARenderer("sm_86")
 ptx_renderer = PTXRenderer("sm_86")
+ptx_renderer2 = PTXRenderer2()
 def schedule(a: Tensor):
   scheduled, vars = a.schedule_with_vars() 
   for si in scheduled:
@@ -46,8 +47,8 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   added = UOp(Ops.ADD, dtypes.long, arg=None, src=(define_global, special))
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
-  print(render2(uops, cuda_renderer))
   print(render2(uops, ptx_renderer))
+  print(render2(uops, ptx_renderer2))
 
 
 
