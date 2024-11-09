@@ -61,6 +61,8 @@ def test_cast():
   casted = UOp(Ops.CAST, dtypes.float64, src=(const_1,))
   store([const_1, casted])
 
+  
+
 
 def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   define_global = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0)
@@ -91,7 +93,7 @@ def compare_ptx(a: Tensor):
     
 
 def addition():
-  a = Tensor.empty(4, 4)
+  a = Tensor.empty(1, 1)
   b = (a + 1).contiguous()
   compare_ptx(b)
 

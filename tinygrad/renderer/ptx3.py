@@ -61,7 +61,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
   (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])),
-
+  (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};")
 ])
 
 class PTXRenderer(Renderer):
@@ -189,12 +189,8 @@ class PTXRenderer(Renderer):
       elif uop is Ops.STORE:
         assert src[0].dtype == dtypes.int64, "store isn't int64"
         mem_type = '.shared' if src[0].op is Ops.DEFINE_LOCAL or any(x.op is Ops.DEFINE_LOCAL for x in src[0].parents) else '.global'
-        gate = f"@{r[src[2]]} " if len(src)>2 and src[2].op is not Ops.IF else ""
-        if src[1].dtype.count > 1:
-          kk(gate + f"st{mem_type}.v{src[1].dtype.count}.{self.mem_types[src[1].dtype.scalar()]} [{r[src[0]]}+0], {{{', '.join(r[src[1]])}}};")
-        else:
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(l)
+        l = self.string_rewrite.rewrite(u, ctx=self)
+        kk(l)
       else:
         if uop is Ops.RANGE: kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
@@ -203,6 +199,7 @@ class PTXRenderer(Renderer):
           print("l", l)
           kk(l)
         elif uop is Ops.DEFINE_ACC:
+          raise RuntimeError("unhandled")
           if dtype.count > 1:
             r[u] = [ssa('acc', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
             for uu in r[u]: kk(f"mov.b{self.types[dtype.scalar()][1:]} {uu}, {const(src[0].src[0].arg, dtype.scalar())};")
@@ -214,6 +211,7 @@ class PTXRenderer(Renderer):
           r[u] = "%" + args[0]
           kernel = [f".reg .u32 %{args[0]};"] + kernel
         elif uop is Ops.DEFINE_VAR:
+          raise RuntimeError("unhandled")
           bufs.append((args[0], dtype))
           r[u] = f"%{args[0]}"
           kk(*self.render_load(args[0], ssa('dat', u, self.types[dtype]), dtype, ss=".param"))
@@ -223,6 +221,7 @@ class PTXRenderer(Renderer):
           kk(l)
           r[u] = out
         elif uop is Ops.GEP:
+          raise RuntimeError("unhandled")
           assert len(u.arg) == 1
           r[u] = r[src[0]][u.arg[0]]
         elif uop is Ops.LOAD:
@@ -246,8 +245,13 @@ class PTXRenderer(Renderer):
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
         elif uop in {Ops.CAST, Ops.BITCAST}:
-          _cast(r[src[0]], dtype, src[0].dtype, bitcast=uop is Ops.BITCAST, u=u)
+          ssa('cast', u, self.types[dtype])
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          print(l)
+          kk(l)
+          # _cast(r[src[0]], dtype, src[0].dtype, bitcast=uop is Ops.BITCAST, u=u)
         elif uop is Ops.DEFINE_LOCAL:
+          raise RuntimeError("unhandled")
           # TODO: we should sum these, and fetch 0xC000 from somewhere
           assert args[1]*dtype.itemsize <= 0xC000, "too large local"
           kk(*self.render_local(ssa('local', u, self.types[dtypes.ulong]), args[0], args[1], dtype))
