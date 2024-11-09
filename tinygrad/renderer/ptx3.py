@@ -60,7 +60,7 @@ string_rewrite = PatternMatcher([
       lambda x, ctx,bidx,var: f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
-  (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], ctx.r[x.src[0]], ctx.r[x.src[1]], ctx.types[x.dtype], ctx.types[x.dtype])),
+  (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])),
 
 ])
 
@@ -193,7 +193,6 @@ class PTXRenderer(Renderer):
         if src[1].dtype.count > 1:
           kk(gate + f"st{mem_type}.v{src[1].dtype.count}.{self.mem_types[src[1].dtype.scalar()]} [{r[src[0]]}+0], {{{', '.join(r[src[1]])}}};")
         else:
-          # kk(gate + f"st{mem_type}.{self.mem_types[src[1].dtype]} [{r[src[0]]}+0], {r[src[1]]};")
           l = self.string_rewrite.rewrite(u, ctx=self)
           kk(l)
       else:
