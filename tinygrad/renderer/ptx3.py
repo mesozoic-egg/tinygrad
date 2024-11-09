@@ -5,7 +5,7 @@ from tinygrad.ops import BinaryOps, UnaryOps, TernaryOps, Ops, UOp, PatternMatch
 from tinygrad.dtype import dtypes, DType, PtrDType, ConstType
 from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import CUDARenderer
-from tinygrad.helpers import prod
+from tinygrad.helpers import prod, strip_parens
 
 def render_val(x, dtype):
   if dtypes.is_float(dtype):
@@ -59,7 +59,9 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
       lambda x, ctx,bidx,var: f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
-  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];")
+  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
+  (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], ctx.r[x.src[0]], ctx.r[x.src[1]], ctx.types[x.dtype], ctx.types[x.dtype])),
+
 ])
 
 class PTXRenderer(Renderer):
@@ -197,8 +199,9 @@ class PTXRenderer(Renderer):
       else:
         if uop is Ops.RANGE: kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
-          src_dtype = src[0].dtype if uop in {BinaryOps.CMPLT, BinaryOps.CMPNE} else dtype
-          kk(self.code_for_op[uop](ssa("alu", u), *[r[x] for x in src], src_dtype, self.types[src_dtype]))
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          print("l", l)
+          kk(l)
         elif uop is Ops.DEFINE_ACC:
           if dtype.count > 1:
             r[u] = [ssa('acc', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
