@@ -90,13 +90,6 @@ def compare_ptx(a: Tensor):
   print(ast)
   src0 = render(ast, PTXRenderer("sm_86"))
   print(src0)
-  print(render(ast, cuda_renderer))
-  # src1 = render(ast, CUDARenderer("sm_86"))
-  # print(src1)
-  # clang = render(ast, ClangRenderer())
-  # print(clang)
-
-    
 
 def addition():
   a = Tensor.empty(1, 1)

@@ -245,11 +245,12 @@ class PTXRenderer(Renderer):
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
         elif uop in {Ops.CAST, Ops.BITCAST}:
+          if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
+            r[u] = r[src[0]]
+            continue
           ssa('cast', u, self.types[dtype])
           l = self.string_rewrite.rewrite(u, ctx=self)
-          print(l)
           kk(l)
-          # _cast(r[src[0]], dtype, src[0].dtype, bitcast=uop is Ops.BITCAST, u=u)
         elif uop is Ops.DEFINE_LOCAL:
           raise RuntimeError("unhandled")
           # TODO: we should sum these, and fetch 0xC000 from somewhere
