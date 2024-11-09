@@ -58,7 +58,8 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
       lambda x, ctx,bidx,var: f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
-    (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
+  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
+  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];")
 ])
 
 class PTXRenderer(Renderer):
@@ -249,10 +250,12 @@ class PTXRenderer(Renderer):
           kk(*self.render_local(ssa('local', u, self.types[dtypes.ulong]), args[0], args[1], dtype))
         elif uop is Ops.DEFINE_GLOBAL:
           bufs.append((nm:=f"data{args}", dtype))
-          r[u] = f"%{nm}"
-          print(r[u])
           dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
-          kk(*self.render_load(nm, ssa('dat', u, self.types[dt]), dt, ss=".param"))
+          register_var = ssa('dat', u, self.types[dt])
+          r[u] = [register_var, f"{nm}"]
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          r[u] = register_var
+          kk(l)
           print(kernel[-1])
         elif uop is Ops.WMMA:
           _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = args
