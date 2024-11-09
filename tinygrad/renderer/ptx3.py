@@ -199,6 +199,7 @@ class PTXRenderer(Renderer):
       else:
         if uop is Ops.RANGE: kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
+          ssa("alu", u)
           l = self.string_rewrite.rewrite(u, ctx=self)
           print("l", l)
           kk(l)
