@@ -55,7 +55,7 @@ ptx_matcher = PatternMatcher([
 ])
 
 string_rewrite = PatternMatcher([
-  (UPat(Ops.CONST, name="x"), lambda ctx, x: render_val(x, x.dtype))
+  (UPat(Ops.CONST, name="x"), lambda ctx, x: f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};")
 ])
 
 class PTXRenderer(Renderer):
@@ -131,6 +131,7 @@ class PTXRenderer(Renderer):
             "\n}")
 
   def render(self, name:str, uops:List[UOp]) -> str:
+    print(uops[-1])
     kernel:List[str] = []
     bufs = []
 
@@ -138,6 +139,7 @@ class PTXRenderer(Renderer):
 
     c: DefaultDict[str, int] = defaultdict(int)
     r: Dict[UOp, Union[List[str], str]] = {}
+    self.r = r
     def ssa(prefix:str, u:Optional[UOp]=None, dtype:Optional[str]=None) -> str:
       nonlocal c, r
       prefix += f"_{dtype if dtype is not None else self.types[cast(UOp, u).dtype]}_"
@@ -206,9 +208,10 @@ class PTXRenderer(Renderer):
           r[u] = f"%{args[0]}"
           kk(*self.render_load(args[0], ssa('dat', u, self.types[dtype]), dtype, ss=".param"))
         elif uop is Ops.CONST:
-          ssa('const', u=u, dtype=self.types[dtype])
+          out = ssa('const', u=u, dtype=self.types[dtype])
           l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
-          r[u] = l
+          kk(l)
+          r[u] = out
         elif uop is Ops.GEP:
           assert len(u.arg) == 1
           r[u] = r[src[0]][u.arg[0]]

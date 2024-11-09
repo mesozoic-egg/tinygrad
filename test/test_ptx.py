@@ -55,6 +55,8 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   print(src0)
   src1 = render2(uops, ptx_renderer3)
   print(src1)
+  # src2 = render2(uops, cuda_renderer)
+  # print(src2)
   assert src0 == src1
 
 
