@@ -58,6 +58,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
       lambda x, ctx,bidx,var: f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
+    (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
 ])
 
 class PTXRenderer(Renderer):
@@ -204,7 +205,8 @@ class PTXRenderer(Renderer):
           else: kk(f"mov.{f'b{self.types[dtype][1:]}' if dtype != dtypes.bool else 'pred'} {ssa('acc', u)}, {const(src[0].arg, dtype)};")
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
-          kk(f"mov.u32 %{args[0]}, %{'ctaid' if args[0][0] == 'g' else 'tid'}.{chr(120+int(args[0][-1]))};")
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          kk(l)
           r[u] = "%" + args[0]
           kernel = [f".reg .u32 %{args[0]};"] + kernel
         elif uop is Ops.DEFINE_VAR:
