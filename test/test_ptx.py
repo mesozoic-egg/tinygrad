@@ -61,6 +61,11 @@ def test_cast():
   casted = UOp(Ops.CAST, dtypes.float64, src=(const_1,))
   store([const_1, casted])
 
+def test_load():
+  buf = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=1)
+  casted = UOp(Ops.CAST, dtypes.long, src=(buf,))
+  load = UOp(Ops.LOAD, dtypes.float32, src=(casted,))
+  store([buf, casted, load])
   
 
 
@@ -85,6 +90,7 @@ def compare_ptx(a: Tensor):
   print(ast)
   src0 = render(ast, PTXRenderer("sm_86"))
   print(src0)
+  print(render(ast, cuda_renderer))
   # src1 = render(ast, CUDARenderer("sm_86"))
   # print(src1)
   # clang = render(ast, ClangRenderer())
