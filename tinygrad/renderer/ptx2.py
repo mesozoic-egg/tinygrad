@@ -40,10 +40,11 @@ class PTXRenderer(CStyleLanguage):
     def fmt(line): return line if line[0]=="$" else "\t" + line.replace(" ", "\t" if len(line.split(" ")[0]) > 7 else "\t\t", 1)
 
     kernel = [f".reg .{reg};" for reg in regs] + kernel + ["ret;"]
+    print(kernel)
     ret = (f"{self.kernel_prefix} {function_name}(\n\t" + 
       ',\n\t'.join([f".param {name}" for name,(dtype,mutable) in bufs]) +
       "\n)\n{\n" +
-      '\n'.join([fmt(line) for op in kernel for line in op.splitlines()]) +
+      '\n'.join([f"\t{k}" for k in kernel]) +
       "\n}"
     )
     return ret
