@@ -45,6 +45,23 @@ def compare2(uops: List[UOp]):
 def test_const():
   store()
 
+def test_mul_float():
+  const_1 = UOp(Ops.CONST, dtypes.float64, arg=2.0)
+  const_2 = UOp(Ops.CONST, dtypes.float64, arg=3.0)
+  mul = UOp(Ops.MUL, dtypes.long, arg=None, src=(const_1, const_2))
+  store([const_1, const_2, mul])
+
+def test_unary():
+  const_1 = UOp(Ops.CONST, dtypes.float64, arg=2.0)
+  exped = UOp(Ops.EXP2, dtypes.float64, src=(const_1,))
+  store([const_1, exped])
+
+def test_cast():
+  const_1 = UOp(Ops.CONST, dtypes.float32, arg=2.0)
+  casted = UOp(Ops.CAST, dtypes.float64, src=(const_1,))
+  store([const_1, casted])
+
+
 def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   define_global = UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0)
   special = UOp(Ops.SPECIAL, dtypes.int, arg=('gidx0', 16), src=())
@@ -70,8 +87,6 @@ def compare_ptx(a: Tensor):
   # print(src1)
   # clang = render(ast, ClangRenderer())
   # print(clang)
-  src2 = render(ast, PTXRenderer2())
-  print(src2)
 
     
 
