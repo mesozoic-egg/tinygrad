@@ -57,12 +57,12 @@ ptx_matcher = PatternMatcher([
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
-      lambda x, ctx,bidx,var: f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
-  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid'}.{chr(120+int(x.arg[0][-1]))};"), 
+      lambda x, ctx,bidx,var: f"st.global.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
+  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
   (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
-  (UPat(Ops.LOAD, name="x"), lambda ctx, x: f"ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
+  (UPat(Ops.LOAD, name="x"), lambda ctx, x: f" ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
     if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];")
 ])
 
@@ -208,6 +208,7 @@ class PTXRenderer(Renderer):
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
           l = self.string_rewrite.rewrite(u, ctx=self)
+          print(l)
           kk(l)
           r[u] = "%" + args[0]
           kernel = [f".reg .u32 %{args[0]};"] + kernel
@@ -223,7 +224,6 @@ class PTXRenderer(Renderer):
           kk(l)
           r[u] = out
         elif uop is Ops.GEP:
-          raise RuntimeError("unhandled")
           assert len(u.arg) == 1
           r[u] = r[src[0]][u.arg[0]]
         elif uop is Ops.LOAD:
@@ -235,6 +235,7 @@ class PTXRenderer(Renderer):
             l = self.string_rewrite.rewrite(u, ctx=self)
             print(l)
             kk(l)
+
           else:
             ssa('val', u)
             l = self.string_rewrite.rewrite(u, ctx=self)

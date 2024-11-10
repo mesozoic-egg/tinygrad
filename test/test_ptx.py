@@ -91,7 +91,7 @@ def compare_ptx(a: Tensor):
   print(src1)
   assert src0 == src1
 
-def addition():
+def test_addition():
   a = Tensor.empty(4, 4)
   b = (a + 1).contiguous()
   compare_ptx(b)
@@ -100,6 +100,3 @@ def sum():
   a = Tensor.empty(4, 4).contiguous()
   b = a.sum(0)
   compare_ptx(b)
-
-if __name__ == "__main__":
-  addition()
