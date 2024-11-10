@@ -138,7 +138,6 @@ class PTXRenderer(Renderer):
             "\n}")
 
   def render(self, name:str, uops:List[UOp]) -> str:
-    print(uops[-1])
     kernel:List[str] = []
     bufs = []
 
@@ -219,6 +218,7 @@ class PTXRenderer(Renderer):
         elif uop is Ops.CONST:
           out = ssa('const', u=u, dtype=self.types[dtype])
           l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
+          print(l)
           kk(l)
           r[u] = out
         elif uop is Ops.GEP:
@@ -229,6 +229,7 @@ class PTXRenderer(Renderer):
           assert src[0].dtype == dtypes.int64, "load isn't int64"
           mem_type = '.shared' if src[0].op is Ops.DEFINE_LOCAL or any(x.op is Ops.DEFINE_LOCAL for x in src[0].parents) else '.global'
           has_gate = len(src) > 2 and src[2].op in GroupOp.ALU
+          print(dtype.count)
           if dtype.count > 1:
             raise RuntimeError("Unhandled")
             r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
@@ -239,6 +240,7 @@ class PTXRenderer(Renderer):
           else:
             ssa('val', u)
             l = self.string_rewrite.rewrite(u, ctx=self)
+            print(l)
             kk(l)
         elif uop is Ops.ASSIGN:
           if dtype.count > 1:
@@ -266,8 +268,8 @@ class PTXRenderer(Renderer):
           r[u] = [register_var, f"{nm}"]
           l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = register_var
+          print(l)
           kk(l)
-          print(kernel[-1])
         elif uop is Ops.WMMA:
           _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = args
           wmma, n_operands = [], tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])

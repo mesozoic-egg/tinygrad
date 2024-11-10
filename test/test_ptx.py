@@ -26,8 +26,6 @@ def schedule(a: Tensor):
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
-  print_uops(kernel.uops)
-  print(kernel.uops[-1])
   src = renderer.render("rendered", kernel.uops)
   return src
 
@@ -87,7 +85,6 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
 
 def compare_ptx(a: Tensor):
   ast = schedule(a)
-  print(ast)
   src0 = render(ast, PTXRenderer("sm_86"))
   print(src0)
   src1 = render(ast, ptx_renderer3)
@@ -95,7 +92,7 @@ def compare_ptx(a: Tensor):
   assert src0 == src1
 
 def addition():
-  a = Tensor.empty(1, 1)
+  a = Tensor.empty(4, 4)
   b = (a + 1).contiguous()
   compare_ptx(b)
 
