@@ -85,7 +85,6 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"),
   (UPat(Ops.ENDRANGE, name="x"), render_endrange),
-
 ])
 
 class PTXRenderer(Renderer):
@@ -146,8 +145,6 @@ class PTXRenderer(Renderer):
       return f"%{prefix}{c[prefix]-1}"
 
     for u in uops:
-      # print("\nu")
-      # print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
         raise RuntimeError("Unhandled")
@@ -160,7 +157,6 @@ class PTXRenderer(Renderer):
         kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
       elif uop is Ops.STORE:
         assert src[0].dtype == dtypes.int64, "store isn't int64"
-        mem_type = '.shared' if src[0].op is Ops.DEFINE_LOCAL or any(x.op is Ops.DEFINE_LOCAL for x in src[0].parents) else '.global'
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(l)
       else:
@@ -168,7 +164,6 @@ class PTXRenderer(Renderer):
           ssa('ridx', u)
           l = self.string_rewrite.rewrite(u, ctx=self)
           kk(*l)
-          # kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
           ssa("alu", u)
           l = self.string_rewrite.rewrite(u, ctx=self)
