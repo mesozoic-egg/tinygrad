@@ -112,3 +112,9 @@ def test_sum_loop():
 def test_arange():
   a = Tensor.arange(0, 12)
   compare_ptx(a)
+
+def test_matmul():
+  a = Tensor.empty(16, 16)
+  b = Tensor.empty(16, 16)
+  c = a.dot(b)
+  compare_ptx(c)
