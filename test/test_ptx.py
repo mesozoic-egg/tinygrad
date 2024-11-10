@@ -100,3 +100,7 @@ def test_sum():
   a = Tensor.empty(4, 4).contiguous()
   b = a.sum(0)
   compare_ptx(b)
+
+def test_arange():
+  a = Tensor.arange(0, 12)
+  compare_ptx(a)

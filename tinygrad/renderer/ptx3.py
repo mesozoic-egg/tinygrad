@@ -54,13 +54,17 @@ ptx_matcher = PatternMatcher([
   (UPat.var("x") >> UPat.var("y"), lambda x,y: UOp(Ops.SHR, x.dtype, (x,y.cast(dtypes.uint))) if y.dtype != dtypes.uint else None),
 ])
 
+def render_alu(ctx, x):
+  src_dtype = x.src[0].dtype if x.op in {BinaryOps.CMPLT, BinaryOps.CMPNE} else x.dtype
+  return ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], src_dtype, ctx.types[src_dtype])
+
 string_rewrite = PatternMatcher([
-  (UPat(Ops.CONST, name="x"), lambda ctx, x: f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
+  (UPat(Ops.CONST, name="x"), lambda ctx, x: f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
       lambda x, ctx,bidx,var: f"st.global.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
-  (UPat(GroupOp.ALU, name="x"), lambda ctx,x: ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])),
+  (UPat(GroupOp.ALU, name="x"), render_alu),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
   (UPat(Ops.LOAD, name="x"), lambda ctx, x: f" ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
     if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];")
@@ -124,8 +128,8 @@ class PTXRenderer(Renderer):
       return f"%{prefix}{c[prefix]-1}"
 
     for u in uops:
-      print("\nu")
-      print(u)
+      # print("\nu")
+      # print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
         raise RuntimeError("Unhandled")
@@ -142,9 +146,11 @@ class PTXRenderer(Renderer):
       else:
         if uop is Ops.RANGE: kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
+          print('\n')
+          print(u)
           ssa("alu", u)
           l = self.string_rewrite.rewrite(u, ctx=self)
-          print("l", l)
+          print("l (ptx3)", l)
           kk(l)
         elif uop is Ops.DEFINE_ACC:
           raise RuntimeError("unhandled")
