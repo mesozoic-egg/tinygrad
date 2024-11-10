@@ -71,10 +71,15 @@ def render_endrange(ctx, x):
   k2 = f"@{ctx.r[x]} bra LOOP_{ctx.r[x.src[0]][1:]};"
   return [k0_1, k2]
 
+def render_store(ctx, x, bidx, var):
+  mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
+  print("memtype render store", mem_type)
+  return f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"
+
+
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
-  (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
-      lambda x, ctx,bidx,var: f"st.global.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.global.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"),
+  (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
   (UPat(GroupOp.ALU, name="x"), render_alu),
@@ -87,7 +92,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"),
   (UPat(Ops.ENDRANGE, name="x"), render_endrange),
   (UPat(Ops.DEFINE_LOCAL, name="x"), lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
-  (UPat(Ops.IF, name="x"), lambda ctx, x: f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)}")
+  (UPat(Ops.IF, name="x"), lambda ctx, x: f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};")
 ])
 
 class PTXRenderer(Renderer):
