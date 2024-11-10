@@ -58,6 +58,12 @@ def render_alu(ctx, x):
   src_dtype = x.src[0].dtype if x.op in {BinaryOps.CMPLT, BinaryOps.CMPNE} else x.dtype
   return ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], src_dtype, ctx.types[src_dtype])
 
+def render_acc(ctx, x):
+  if x.dtype.count > 1:
+    raise RuntimeError("Unhandled")
+  else:
+    return f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]}"
+
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True),
@@ -67,7 +73,8 @@ string_rewrite = PatternMatcher([
   (UPat(GroupOp.ALU, name="x"), render_alu),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
   (UPat(Ops.LOAD, name="x"), lambda ctx, x: f" ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
-    if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];")
+    if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"),
+  (UPat(Ops.DEFINE_ACC, name="x"), render_acc)
 ])
 
 class PTXRenderer(Renderer):
@@ -153,7 +160,11 @@ class PTXRenderer(Renderer):
           print("l (ptx3)", l)
           kk(l)
         elif uop is Ops.DEFINE_ACC:
-          raise RuntimeError("unhandled")
+          acc = ssa('acc', u)
+          _const = ssa('const', u)
+          r[u] = [acc, _const]
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          kk(l)
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
           l = self.string_rewrite.rewrite(u, ctx=self)

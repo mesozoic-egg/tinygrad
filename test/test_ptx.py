@@ -8,6 +8,7 @@ from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import ClangRenderer, CUDARenderer
 from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
 from tinygrad.renderer.ptx3 import PTXRenderer as PTXRenderer3
+from tinygrad.helpers import Context, NOOPT
 
 from typing import List
 
@@ -96,10 +97,17 @@ def test_addition():
   b = (a + 1).contiguous()
   compare_ptx(b)
 
-def test_sum():
-  a = Tensor.empty(4, 4).contiguous()
+def _sum():
+  a = Tensor.empty(16, 16).contiguous()
   b = a.sum(0)
   compare_ptx(b)
+
+def test_sum():
+  _sum()
+
+def test_sum_loop():
+  with Context(NOOPT=1):
+    _sum()
 
 def test_arange():
   a = Tensor.arange(0, 12)
