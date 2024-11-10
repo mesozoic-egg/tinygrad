@@ -78,6 +78,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
   (UPat(GroupOp.ALU, name="x"), render_alu),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
   (UPat(Ops.LOAD, name="x"), lambda ctx, x: f" ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
     if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"),
@@ -214,6 +215,9 @@ class PTXRenderer(Renderer):
             continue
           ssa('cast', u, self.types[dtype])
           l = self.string_rewrite.rewrite(u, ctx=self)
+          print("cast")
+          print(u)
+          print(l)
           kk(l)
         elif uop is Ops.DEFINE_LOCAL:
           ssa('local', u, self.types[dtypes.ulong])
