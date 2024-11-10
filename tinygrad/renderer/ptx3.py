@@ -95,37 +95,6 @@ class PTXRenderer(Renderer):
 
   const_requires_mov: List[DType] = [dtypes.half, dtypes.bool]
 
-  def render_const(self, x:ConstType, dtype:DType, mov=None) -> Union[List[str], str]:
-    val = render_val(x, dtype)
-    if dtype == dtypes.bool: return [f"setp.ne.s16 {mov}, {val}, 0;"]
-    print(x)
-    if mov:
-      return [f"mov.b{self.types[dtype][1:]} {mov}, {val};"] if mov else val
-    else:
-      l = cast(str, self.string_rewrite.rewrite(x, ctx=self))
-      return l
-
-  def render_local(self, dest, name, size, dtype) -> List[str]:
-    return [f".shared .align 4 .b8 {name}[{size*dtype.itemsize}];", f"mov.u64 {dest}, {name}[0];"]
-
-  def render_loop(self, idx, start, label, acc=None) -> List[str]: return [f"mov.u32 {idx}, {start};", f"{label}:"]
-
-  def render_bra(self, b1, pred=None, invert=False) -> List[str]:
-    return [f"@{'!' if invert else ''}{pred} bra {b1};"] if pred else [f"bra {b1};"]
-
-  def render_load(self, loc, dest, dtype, gate=None, alt=None, ss="", offset=0) -> List[str]:
-    assert dtype != dtypes.bool
-    if gate: return [f"@{gate} ld{ss}.{self.mem_types[dtype]} {dest}, [{loc}+{offset}];", f"@!{gate} mov.b{self.types[dtype][1:]} {dest}, {alt};"]
-    return [f"ld{ss}.{self.mem_types[dtype]} {dest}, [{loc}+{offset}];"]
-
-  def render_cast(self, d:str, a:str, dtype:DType, atype:DType, bitcast=False, pred=False) -> List[str]:
-    if bitcast: return [f"mov.b{self.types[dtype][1:]} {d}, {a};"]
-    if atype == dtypes.bool: return [f"selp.b{self.types[dtype][1:]} {d}, {render_val(1, dtype)}, {render_val(0, dtype)}, {a};"]
-    if dtype == dtypes.bool: return [f"setp.ne.b{self.types[atype][1:]} {d}, {a}, {self.render_const(0, atype)};"]
-    rnd = ('.rzi' if dtypes.is_int(dtype) and dtypes.is_float(atype) else
-           '.rn' if dtypes.is_float(dtype) and (dtype.itemsize < atype.itemsize or dtypes.is_int(atype) or atype == dtypes.bool) else '')
-    return [f"cvt{rnd}.{self.types[dtype]}.{self.types[atype]} {d}, {a};"]
-
   def render_kernel(self, kernel, function_name, bufs, regs) -> str:
     print("bufs")
     print(bufs)
@@ -154,37 +123,15 @@ class PTXRenderer(Renderer):
       if u is not None: r[u] = f"%{prefix}{c[prefix]-1}"
       return f"%{prefix}{c[prefix]-1}"
 
-    def const(x:ConstType, dtype:DType, mov=False):
-      if mov or dtype in self.const_requires_mov:
-        out = ssa('const', u=u, dtype=self.types[dtype])
-        print("out ssa")
-        print(out)
-        print("registry")
-        print(r[u])
-        kk(*self.render_const(x, dtype, mov=out))
-        print(kernel[-1])
-        return out
-      return self.render_const(x, dtype)
-
-    def _cast(a, dtype:DType, atype:DType, bitcast=False, u=None, pred=False):
-      if atype == dtype or isinstance(atype, PtrDType):
-        if u is not None: r[u] = a
-        return a
-      kk(*self.render_cast((ret:=ssa('cast', u, self.types[dtype])), a, dtype, atype, bitcast))
-      return ret
-
     for u in uops:
       print("\nu")
       print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
-        pred_reg = _cast(r[src[0]], dtypes.bool, src[0].dtype, u=u, pred=True)
-        kk(*self.render_bra(f"IF_{r[src[0]][1:]}_{uops.index(u)}", pred_reg, invert=True))
+        raise RuntimeError("Unhandled")
       elif uop is Ops.BARRIER and self.barrier: kk(self.barrier)
       elif uop is Ops.ENDRANGE:
-        kk(self.code_for_op[BinaryOps.ADD](r[src[0]], r[src[0]], "1", dtypes.int, self.types[dtypes.int]),
-            self.code_for_op[BinaryOps.CMPLT](pred:=ssa("pred", dtype="pred"), r[src[0]], r[src[0].src[1]], dtypes.int, self.types[dtypes.int]))
-        kk(*self.render_bra(f"LOOP_{r[src[0]][1:]}", pred))
+        raise RuntimeError("Unhandled")
       elif uop is Ops.ENDIF:
         kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
       elif uop is Ops.STORE:
@@ -201,10 +148,6 @@ class PTXRenderer(Renderer):
           kk(l)
         elif uop is Ops.DEFINE_ACC:
           raise RuntimeError("unhandled")
-          if dtype.count > 1:
-            r[u] = [ssa('acc', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-            for uu in r[u]: kk(f"mov.b{self.types[dtype.scalar()][1:]} {uu}, {const(src[0].src[0].arg, dtype.scalar())};")
-          else: kk(f"mov.{f'b{self.types[dtype][1:]}' if dtype != dtypes.bool else 'pred'} {ssa('acc', u)}, {const(src[0].arg, dtype)};")
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
           l = self.string_rewrite.rewrite(u, ctx=self)
@@ -214,9 +157,6 @@ class PTXRenderer(Renderer):
           kernel = [f".reg .u32 %{args[0]};"] + kernel
         elif uop is Ops.DEFINE_VAR:
           raise RuntimeError("unhandled")
-          bufs.append((args[0], dtype))
-          r[u] = f"%{args[0]}"
-          kk(*self.render_load(args[0], ssa('dat', u, self.types[dtype]), dtype, ss=".param"))
         elif uop is Ops.CONST:
           out = ssa('const', u=u, dtype=self.types[dtype])
           l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
@@ -228,23 +168,18 @@ class PTXRenderer(Renderer):
           r[u] = r[src[0]][u.arg[0]]
         elif uop is Ops.LOAD:
           assert src[0].dtype == dtypes.int64, "load isn't int64"
-          mem_type = '.shared' if src[0].op is Ops.DEFINE_LOCAL or any(x.op is Ops.DEFINE_LOCAL for x in src[0].parents) else '.global'
-          has_gate = len(src) > 2 and src[2].op in GroupOp.ALU
           if dtype.count > 1:
             r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
             l = self.string_rewrite.rewrite(u, ctx=self)
             print(l)
             kk(l)
-
           else:
             ssa('val', u)
             l = self.string_rewrite.rewrite(u, ctx=self)
             print(l)
             kk(l)
         elif uop is Ops.ASSIGN:
-          if dtype.count > 1:
-            for x0, x1 in zip(r[src[0]], r[src[1]]): kk(f"mov.b{self.types[dtype.scalar()][1:]} {x0}, {x1};")
-          else: kk(f"mov.{f'b{self.types[dtype][1:]}' if dtype != dtypes.bool else 'pred'} {r[src[0]]}, {r[src[1]]};")
+          raise RuntimeError("Unhandled")
           r[u] = r[src[0]]
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
@@ -257,9 +192,6 @@ class PTXRenderer(Renderer):
           kk(l)
         elif uop is Ops.DEFINE_LOCAL:
           raise RuntimeError("unhandled")
-          # TODO: we should sum these, and fetch 0xC000 from somewhere
-          assert args[1]*dtype.itemsize <= 0xC000, "too large local"
-          kk(*self.render_local(ssa('local', u, self.types[dtypes.ulong]), args[0], args[1], dtype))
         elif uop is Ops.DEFINE_GLOBAL:
           bufs.append((nm:=f"data{args}", dtype))
           dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype

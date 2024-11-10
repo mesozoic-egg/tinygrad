@@ -96,7 +96,7 @@ def test_addition():
   b = (a + 1).contiguous()
   compare_ptx(b)
 
-def sum():
+def test_sum():
   a = Tensor.empty(4, 4).contiguous()
   b = a.sum(0)
   compare_ptx(b)
