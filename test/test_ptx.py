@@ -90,6 +90,9 @@ def compare_ptx(a: Tensor):
   print(ast)
   src0 = render(ast, PTXRenderer("sm_86"))
   print(src0)
+  src1 = render(ast, ptx_renderer3)
+  print(src1)
+  assert src0 == src1
 
 def addition():
   a = Tensor.empty(1, 1)
