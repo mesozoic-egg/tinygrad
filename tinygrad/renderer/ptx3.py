@@ -62,7 +62,14 @@ def render_acc(ctx, x):
   if x.dtype.count > 1:
     raise RuntimeError("Unhandled")
   else:
-    return f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]}"
+    return f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]};"
+
+def render_endrange(ctx, x):
+  k0 = ctx.code_for_op[BinaryOps.ADD](ctx.r[x.src[0]], ctx.r[x.src[0]], "1", dtypes.int, ctx.types[dtypes.int])
+  k1 = ctx.code_for_op[BinaryOps.CMPLT](ctx.r[x], ctx.r[x.src[0]], ctx.r[x.src[0].src[1]], dtypes.int, ctx.types[dtypes.int])
+  k0_1 = "\n".join([k0, k1])
+  k2 = f"@{ctx.r[x]} bra LOOP_{ctx.r[x.src[0]][1:]};"
+  return [k0_1, k2]
 
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
@@ -74,7 +81,11 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
   (UPat(Ops.LOAD, name="x"), lambda ctx, x: f" ld.global.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
     if x.dtype.count > 1 else f"ld.global.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"),
-  (UPat(Ops.DEFINE_ACC, name="x"), render_acc)
+  (UPat(Ops.DEFINE_ACC, name="x"), render_acc),
+  (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
+  (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"),
+  (UPat(Ops.ENDRANGE, name="x"), render_endrange),
+
 ])
 
 class PTXRenderer(Renderer):
@@ -142,7 +153,9 @@ class PTXRenderer(Renderer):
         raise RuntimeError("Unhandled")
       elif uop is Ops.BARRIER and self.barrier: kk(self.barrier)
       elif uop is Ops.ENDRANGE:
-        raise RuntimeError("Unhandled")
+        ssa("pred", u, dtype="pred")
+        l = self.string_rewrite.rewrite(u, ctx=self)
+        kk(*l)
       elif uop is Ops.ENDIF:
         kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
       elif uop is Ops.STORE:
@@ -151,24 +164,25 @@ class PTXRenderer(Renderer):
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(l)
       else:
-        if uop is Ops.RANGE: kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
+        if uop is Ops.RANGE:
+          ssa('ridx', u)
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          kk(*l)
+          # kk(*self.render_loop(loop:=ssa('ridx', u), r[src[0]], "LOOP_"+loop[1:]))
         elif uop in GroupOp.ALU:
-          print('\n')
-          print(u)
           ssa("alu", u)
           l = self.string_rewrite.rewrite(u, ctx=self)
-          print("l (ptx3)", l)
           kk(l)
         elif uop is Ops.DEFINE_ACC:
           acc = ssa('acc', u)
-          _const = ssa('const', u)
+          _const = render_val(u.src[0].arg, u.dtype)
           r[u] = [acc, _const]
           l = self.string_rewrite.rewrite(u, ctx=self)
+          r[u] = acc
           kk(l)
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
           l = self.string_rewrite.rewrite(u, ctx=self)
-          print(l)
           kk(l)
           r[u] = "%" + args[0]
           kernel = [f".reg .u32 %{args[0]};"] + kernel
@@ -177,7 +191,6 @@ class PTXRenderer(Renderer):
         elif uop is Ops.CONST:
           out = ssa('const', u=u, dtype=self.types[dtype])
           l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
-          print(l)
           kk(l)
           r[u] = out
         elif uop is Ops.GEP:
@@ -196,7 +209,8 @@ class PTXRenderer(Renderer):
             print(l)
             kk(l)
         elif uop is Ops.ASSIGN:
-          raise RuntimeError("Unhandled")
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          kk(l)
           r[u] = r[src[0]]
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
