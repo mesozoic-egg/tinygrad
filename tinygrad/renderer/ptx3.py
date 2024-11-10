@@ -85,6 +85,8 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"),
   (UPat(Ops.ENDRANGE, name="x"), render_endrange),
+  (UPat(Ops.DEFINE_LOCAL, name="x"), lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
+  (UPat(Ops.IF, name="x"), lambda ctx, x: f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)}")
 ])
 
 class PTXRenderer(Renderer):
@@ -117,10 +119,6 @@ class PTXRenderer(Renderer):
   const_requires_mov: List[DType] = [dtypes.half, dtypes.bool]
 
   def render_kernel(self, kernel, function_name, bufs, regs) -> str:
-    print("bufs")
-    print(bufs)
-    print('regs')
-    print(regs)
     kernel = [f".reg .{reg.split('_')[-2]} %{reg}<{cnt}>;" for reg,cnt in regs] + kernel + ["ret;"]
     def fmt(line): return line if line[0]=="$" else "\t" + line.replace(" ", "\t" if len(line.split(" ")[0]) > 7 else "\t\t", 1)
     return (f"{self.kernel_prefix} {function_name}(\n\t" +
@@ -144,10 +142,13 @@ class PTXRenderer(Renderer):
       if u is not None: r[u] = f"%{prefix}{c[prefix]-1}"
       return f"%{prefix}{c[prefix]-1}"
 
+    self.uops = uops
     for u in uops:
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
-        raise RuntimeError("Unhandled")
+        l = self.string_rewrite.rewrite(u, ctx=self)
+        kk(l)
+
       elif uop is Ops.BARRIER and self.barrier: kk(self.barrier)
       elif uop is Ops.ENDRANGE:
         ssa("pred", u, dtype="pred")
@@ -196,12 +197,10 @@ class PTXRenderer(Renderer):
           if dtype.count > 1:
             r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
             l = self.string_rewrite.rewrite(u, ctx=self)
-            print(l)
             kk(l)
           else:
             ssa('val', u)
             l = self.string_rewrite.rewrite(u, ctx=self)
-            print(l)
             kk(l)
         elif uop is Ops.ASSIGN:
           l = self.string_rewrite.rewrite(u, ctx=self)
@@ -217,7 +216,10 @@ class PTXRenderer(Renderer):
           l = self.string_rewrite.rewrite(u, ctx=self)
           kk(l)
         elif uop is Ops.DEFINE_LOCAL:
-          raise RuntimeError("unhandled")
+          ssa('local', u, self.types[dtypes.ulong])
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          kk(*l)
+
         elif uop is Ops.DEFINE_GLOBAL:
           bufs.append((nm:=f"data{args}", dtype))
           dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
@@ -225,7 +227,6 @@ class PTXRenderer(Renderer):
           r[u] = [register_var, f"{nm}"]
           l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = register_var
-          print(l)
           kk(l)
         elif uop is Ops.WMMA:
           _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = args
