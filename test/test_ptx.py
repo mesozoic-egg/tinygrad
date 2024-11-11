@@ -68,7 +68,6 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
   src0 = render2(uops, ptx_renderer)
-  print(src0)
   src1 = render2(uops, ptx_renderer3)
   assert src0 == src1
 
@@ -132,5 +131,4 @@ def test_acc_vec():
     vec,
     _range 
   ))
-  print("dtype", acc.dtype.scalar())
   store([const_0, const_64, _range, const_0_0, vec, acc])
