@@ -177,6 +177,7 @@ class PTXRenderer(Renderer):
         kk(*l)
       elif uop is Ops.BARRIER and self.barrier:
         kk(self.barrier)
+        continue
       elif uop is Ops.ENDRANGE:
         ssa("pred", u, dtype="pred")
         l = self.string_rewrite.rewrite(u, ctx=self)
@@ -184,7 +185,6 @@ class PTXRenderer(Renderer):
       elif uop is Ops.ENDIF:
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(*l)
-        # kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
       elif uop is Ops.STORE:
         assert src[0].dtype == dtypes.int64, "store isn't int64"
         l = self.string_rewrite.rewrite(u, ctx=self)
@@ -265,6 +265,7 @@ class PTXRenderer(Renderer):
           r[u] = r[u][-dtype.count:]
           kk(*l)
         else: raise NotImplementedError(f"no code for {uop}")
+
 
     return self.render_kernel(kernel, name, bufs, c.items())
 
