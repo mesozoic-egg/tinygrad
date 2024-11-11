@@ -56,13 +56,13 @@ ptx_matcher = PatternMatcher([
 
 def render_alu(ctx, x):
   src_dtype = x.src[0].dtype if x.op in {BinaryOps.CMPLT, BinaryOps.CMPNE} else x.dtype
-  return ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], src_dtype, ctx.types[src_dtype])
+  return [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], src_dtype, ctx.types[src_dtype])]
 
 def render_acc(ctx, x):
   if x.dtype.count > 1:
     raise RuntimeError("Unhandled")
   else:
-    return f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]};"
+    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]};"]
 
 def render_endrange(ctx, x):
   k0 = ctx.code_for_op[BinaryOps.ADD](ctx.r[x.src[0]], ctx.r[x.src[0]], "1", dtypes.int, ctx.types[dtypes.int])
@@ -74,28 +74,40 @@ def render_endrange(ctx, x):
 def render_store(ctx, x, bidx, var):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
   print("memtype render store", mem_type)
-  return f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"
+  return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_load(ctx, x):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
-  return f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
-    if x.dtype.count > 1 else f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"
+  return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
+    if x.dtype.count > 1 else f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"]
 
+def render_wmma(ctx, x):
+  _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
+  n_operands = tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
+  wmma = ctx.r[x][x.dtype.count:]
+  dt_map = { dtypes.half: "f16" }
+  ret = [f"mov.b32 {var}, {{{', '.join(ctx.r[vv][i:i+2])}}}" for vv in x.src[:2] for var, i in zip(ctx.r[x][x.dtype.count:], range(0, len(ctx.r[vv]), 2))]
+  ret.append(f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
+            {{{", ".join(ctx.r[x][x.dtype.count:])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
+  return ret
+  
 string_rewrite = PatternMatcher([
-  (UPat(Ops.CONST, name="x"), lambda ctx, x: f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"),
+  (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
-  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"), 
-  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"),
+  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
+  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"]),
   (UPat(GroupOp.ALU, name="x"), render_alu),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"),
-  (UPat(Ops.CAST, name="x"), lambda ctx, x: f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
+  (UPat(Ops.CAST, name="x"), lambda ctx, x: [f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
   (UPat(Ops.LOAD, name="x"), render_load),
   (UPat(Ops.DEFINE_ACC, name="x"), render_acc),
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
-  (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"),
+  (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"]),
   (UPat(Ops.ENDRANGE, name="x"), render_endrange),
   (UPat(Ops.DEFINE_LOCAL, name="x"), lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
-  (UPat(Ops.IF, name="x"), lambda ctx, x: f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};")
+  (UPat(Ops.IF, name="x"), lambda ctx, x: [f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};"]),
+  (UPat(Ops.WMMA, name="x"), render_wmma),
+  
 ])
 
 class PTXRenderer(Renderer):
@@ -156,7 +168,7 @@ class PTXRenderer(Renderer):
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
         l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(l)
+        kk(*l)
 
       elif uop is Ops.BARRIER and self.barrier: kk(self.barrier)
       elif uop is Ops.ENDRANGE:
@@ -168,7 +180,7 @@ class PTXRenderer(Renderer):
       elif uop is Ops.STORE:
         assert src[0].dtype == dtypes.int64, "store isn't int64"
         l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(l)
+        kk(*l)
       else:
         if uop is Ops.RANGE:
           ssa('ridx', u)
@@ -177,18 +189,18 @@ class PTXRenderer(Renderer):
         elif uop in GroupOp.ALU:
           ssa("alu", u)
           l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(l)
+          kk(*l)
         elif uop is Ops.DEFINE_ACC:
           acc = ssa('acc', u)
           _const = render_val(u.src[0].arg, u.dtype)
           r[u] = [acc, _const]
           l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = acc
-          kk(l)
+          kk(*l)
         elif uop is Ops.SPECIAL:
           assert args[0][0] != "i", "idx not supported"
           l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(l)
+          kk(*l)
           r[u] = "%" + args[0]
           kernel = [f".reg .u32 %{args[0]};"] + kernel
         elif uop is Ops.DEFINE_VAR:
@@ -196,7 +208,7 @@ class PTXRenderer(Renderer):
         elif uop is Ops.CONST:
           out = ssa('const', u=u, dtype=self.types[dtype])
           l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
-          kk(l)
+          kk(*l)
           r[u] = out
         elif uop is Ops.GEP:
           assert len(u.arg) == 1
@@ -206,14 +218,14 @@ class PTXRenderer(Renderer):
           if dtype.count > 1:
             r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
             l = self.string_rewrite.rewrite(u, ctx=self)
-            kk(l)
+            kk(*l)
           else:
             ssa('val', u)
             l = self.string_rewrite.rewrite(u, ctx=self)
-            kk(l)
+            kk(*l)
         elif uop is Ops.ASSIGN:
           l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(l)
+          kk(*l)
           r[u] = r[src[0]]
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
@@ -223,7 +235,7 @@ class PTXRenderer(Renderer):
             continue
           ssa('cast', u, self.types[dtype])
           l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(l)
+          kk(*l)
         elif uop is Ops.DEFINE_LOCAL:
           ssa('local', u, self.types[dtypes.ulong])
           l = self.string_rewrite.rewrite(u, ctx=self)
@@ -236,19 +248,14 @@ class PTXRenderer(Renderer):
           r[u] = [register_var, f"{nm}"]
           l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = register_var
-          kk(l)
+          kk(*l)
         elif uop is Ops.WMMA:
-          raise RuntimeError("not handled")
-          _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = args
-          wmma, n_operands = [], tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
-          dt_map = { dtypes.half: "f16" }
-          for vv in src[:2]:
-            for i in range(0, len(r[vv]), 2):
-              wmma.append(ssa("wmma", dtype="b32"))
-              kk(f'mov.b32 {wmma[-1]}, {{{", ".join(r[vv][i:i+2])}}};')
           r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-          kk(f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
-            {{{", ".join(r[u])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(r[src[2]])}}};')
+          r[u].extend([ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)])
+          l = self.string_rewrite.rewrite(u, ctx=self)
+          r[u] = r[u][:dtype.count]
+          kk(*l)
+          pass
         else: raise NotImplementedError(f"no code for {uop}")
 
     return self.render_kernel(kernel, name, bufs, c.items())
