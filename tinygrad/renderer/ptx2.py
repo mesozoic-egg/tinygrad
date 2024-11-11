@@ -64,9 +64,8 @@ def render_acc(ctx, x):
 def render_endrange(ctx, x):
   k0 = ctx.code_for_op[BinaryOps.ADD](ctx.r[x.src[0]], ctx.r[x.src[0]], "1", dtypes.int, ctx.types[dtypes.int])
   k1 = ctx.code_for_op[BinaryOps.CMPLT](ctx.r[x], ctx.r[x.src[0]], ctx.r[x.src[0].src[1]], dtypes.int, ctx.types[dtypes.int])
-  k0_1 = "\n".join([k0, k1])
   k2 = f"@{ctx.r[x]} bra LOOP_{ctx.r[x.src[0]][1:]};"
-  return [k0_1, k2]
+  return [k0, k1, k2]
 
 def render_store(ctx, x, bidx, var):
   mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
