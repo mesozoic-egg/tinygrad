@@ -84,11 +84,19 @@ def render_load(ctx, x):
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
   n_operands = tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
-  wmma = ctx.r[x][x.dtype.count:]
+  wmma = ctx.r[x][:-x.dtype.count]
+  print(f"{wmma=}")
+  print(f"{ctx.r[x]=}")
   dt_map = { dtypes.half: "f16" }
-  ret = [f"mov.b32 {var}, {{{', '.join(ctx.r[vv][i:i+2])}}}" for vv in x.src[:2] for var, i in zip(ctx.r[x][x.dtype.count:], range(0, len(ctx.r[vv]), 2))]
+  ret = []
+  _i = 0
+  for vv in x.src[:2]:
+    for i in range(0, len(ctx.r[vv]), 2):
+      ret.append(f"mov.b32 {ctx.r[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};")
+      _i += 1 
+  # ret = [f"mov.b32 {var}, {{{', '.join(ctx.r[vv][i:i+2])}}}" for vv in x.src[:2] for var, i in zip(ctx.r[x][x.dtype.count:], range(0, len(ctx.r[vv]), 2))]
   ret.append(f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
-            {{{", ".join(ctx.r[x][x.dtype.count:])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
+            {{{", ".join(ctx.r[x][-x.dtype.count:])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
   return ret
   
 string_rewrite = PatternMatcher([
@@ -250,10 +258,10 @@ class PTXRenderer(Renderer):
           r[u] = register_var
           kk(*l)
         elif uop is Ops.WMMA:
-          r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-          r[u].extend([ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)])
+          r[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
+          r[u].extend([ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]) 
           l = self.string_rewrite.rewrite(u, ctx=self)
-          r[u] = r[u][:dtype.count]
+          r[u] = r[u][-dtype.count:]
           kk(*l)
           pass
         else: raise NotImplementedError(f"no code for {uop}")
