@@ -70,12 +70,17 @@ def render_endrange(ctx, x):
 
 def render_store(ctx, x, bidx, var):
   mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
-  return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
+  if var.dtype.count > 1:
+    return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};"]
+  else:
+    return [f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_load(ctx, x):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
-  return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"\
-    if x.dtype.count > 1 else f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"]
+  if x.dtype.count > 1:
+    return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"]
+  else:
+    return [f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"]
 
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
@@ -142,8 +147,6 @@ class PTXRenderer(Renderer):
   mem_types: Dict[DType, str] =  types.copy()
   mem_types.update({dtypes.int8: "s8", dtypes.uint8: "u8", dtypes.bool: "u8", dtypes.float16: "b16"})
 
-  const_requires_mov: List[DType] = [dtypes.half, dtypes.bool]
-
   def render_kernel(self, kernel, function_name, bufs, regs) -> str:
     kernel = [f".reg .{reg.split('_')[-2]} %{reg}<{cnt}>;" for reg,cnt in regs] + kernel + ["ret;"]
     def fmt(line): return line if line[0]=="$" else "\t" + line.replace(" ", "\t" if len(line.split(" ")[0]) > 7 else "\t\t", 1)
@@ -171,38 +174,35 @@ class PTXRenderer(Renderer):
     for u in uops:
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
-      if uop is Ops.ENDRANGE:
-        ssa("pred", u, dtype="pred")
-      elif uop is Ops.RANGE:
-        ssa("ridx", u)
-      elif uop in GroupOp.ALU:
-        ssa("alu", u)
-      elif uop is Ops.DEFINE_ACC:
-        if dtype.count > 1:
-          r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-        else:
-          r[u] = ssa("acc", u)
-      elif uop is Ops.SPECIAL:
-        r[u] = "%" + args[0]
-      elif uop is Ops.DEFINE_VAR:
-        raise RuntimeError("unhandled")
-      elif uop is Ops.CONST:
-        ssa("const", u, dtype=self.types[dtype])
+      if uop is Ops.VECTORIZE:
+        r[u] = [cast(str,r[x]) for x in src]
+        continue
       elif uop is Ops.GEP:
         assert len(u.arg) == 1
         r[u] = r[src[0]][u.arg[0]]
-        continue
-      elif uop is Ops.LOAD:
-        assert src[0].dtype == dtypes.int64, "load isn't int64"
-        r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa('val', u)
-      elif uop is Ops.VECTORIZE:
-        r[u] = [cast(str,r[x]) for x in src]
         continue
       elif uop in {Ops.CAST, Ops.BITCAST}:
         if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
           r[u] = r[src[0]]
           continue
         ssa('cast', u, self.types[dtype])
+      elif uop is Ops.ENDRANGE:
+        ssa("pred", u, dtype="pred")
+      elif uop is Ops.RANGE:
+        ssa("ridx", u)
+      elif uop in GroupOp.ALU:
+        ssa("alu", u)
+      elif uop is Ops.DEFINE_ACC:
+        r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
+      elif uop is Ops.SPECIAL:
+        r[u] = "%" + args[0]
+      elif uop is Ops.DEFINE_VAR:
+        raise RuntimeError("unhandled")
+      elif uop is Ops.CONST:
+        ssa("const", u, dtype=self.types[dtype])
+      elif uop is Ops.LOAD:
+        assert src[0].dtype == dtypes.int64, "load isn't int64"
+        r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa('val', u)
       elif uop is Ops.DEFINE_LOCAL:
         ssa('local', u, self.types[dtypes.ulong])
       elif uop is Ops.DEFINE_GLOBAL:
@@ -211,8 +211,6 @@ class PTXRenderer(Renderer):
       elif uop is Ops.WMMA:
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-
-      
       l = self.string_rewrite.rewrite(u, ctx=self)
       kernel.extend(l)
 
