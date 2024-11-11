@@ -57,9 +57,9 @@ ptx_matcher = PatternMatcher([
 
 def render_acc(ctx, x):
   if x.dtype.count > 1:
-    return [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.extra[x]};" for uu in ctx.r[x]]
+    return [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(x.src[0].src[0].arg, x.dtype.scalar())};" for uu in ctx.r[x]]
   else:
-    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {ctx.extra[x]};"]
+    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {render_val(x.src[0].arg, x.dtype)};"]
 
 def render_endrange(ctx, x):
   k0 = ctx.code_for_op[BinaryOps.ADD](ctx.r[x.src[0]], ctx.r[x.src[0]], "1", dtypes.int, ctx.types[dtypes.int])
@@ -180,11 +180,8 @@ class PTXRenderer(Renderer):
       elif uop is Ops.DEFINE_ACC:
         if dtype.count > 1:
           r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-          _const = render_val(u.src[0].src[0].arg, dtype.scalar())
         else:
           r[u] = ssa("acc", u)
-          _const = render_val(u.src[0].arg, u.dtype)
-        self.extra[u] = _const
       elif uop is Ops.SPECIAL:
         r[u] = "%" + args[0]
       elif uop is Ops.DEFINE_VAR:
