@@ -83,24 +83,23 @@ def render_load(ctx, x):
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
   n_operands = tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
-  wmma = ctx.r[x][:-x.dtype.count]
+  wmma = ctx.extra[x]
   dt_map = { dtypes.half: "f16" }
   ret = []
   _i = 0
   for vv in x.src[:2]:
     for i in range(0, len(ctx.r[vv]), 2):
-      ret.append(f"mov.b32 {ctx.r[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};")
+      ret.append(f"mov.b32 {ctx.extra[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};")
       _i += 1 
-  # ret = [f"mov.b32 {var}, {{{', '.join(ctx.r[vv][i:i+2])}}}" for vv in x.src[:2] for var, i in zip(ctx.r[x][x.dtype.count:], range(0, len(ctx.r[vv]), 2))]
   ret.append(f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
-            {{{", ".join(ctx.r[x][-x.dtype.count:])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
+            {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
   return ret
   
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
-  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x][0]}, [{ctx.r[x][1]}+0];"]),
+  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [{ctx.extra[x]}+0];"]),
   (UPat(GroupOp.ALU, name="x"), render_alu),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: [f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
@@ -162,6 +161,7 @@ class PTXRenderer(Renderer):
     c: DefaultDict[str, int] = defaultdict(int)
     r: Dict[UOp, Union[List[str], str]] = {}
     self.r = r
+    self.extra: Dict[UOp, Union[List[str], str]] = {}
     def ssa(prefix:str, u:Optional[UOp]=None, dtype:Optional[str]=None) -> str:
       nonlocal c, r
       prefix += f"_{dtype if dtype is not None else self.types[cast(UOp, u).dtype]}_"
@@ -254,15 +254,17 @@ class PTXRenderer(Renderer):
           bufs.append((nm:=f"data{args}", dtype))
           dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
           register_var = ssa('dat', u, self.types[dt])
-          r[u] = [register_var, f"{nm}"]
-          l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = register_var
+          self.extra[u] = nm
+          l = self.string_rewrite.rewrite(u, ctx=self)
           kk(*l)
         elif uop is Ops.WMMA:
-          r[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
-          r[u].extend([ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]) 
+          self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
+          r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
+          # r[u].extend([ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]) 
+          # self.extra[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
           l = self.string_rewrite.rewrite(u, ctx=self)
-          r[u] = r[u][-dtype.count:]
+          # r[u] = r[u][-dtype.count:]
           kk(*l)
         else: raise NotImplementedError(f"no code for {uop}")
 
