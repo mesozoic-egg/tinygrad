@@ -62,7 +62,7 @@ def render_acc(ctx, x):
   if x.dtype.count > 1:
     raise RuntimeError("Unhandled")
   else:
-    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x][0]}, {ctx.r[x][1]};"]
+    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {ctx.extra[x]};"]
 
 def render_endrange(ctx, x):
   k0 = ctx.code_for_op[BinaryOps.ADD](ctx.r[x.src[0]], ctx.r[x.src[0]], "1", dtypes.int, ctx.types[dtypes.int])
@@ -98,7 +98,9 @@ def render_wmma(ctx, x):
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
-  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
+  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [
+    f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};",
+   ]), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [{ctx.extra[x]}+0];"]),
   (UPat(GroupOp.ALU, name="x"), render_alu),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
@@ -113,7 +115,6 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
   (UPat(Ops.WMMA, name="x"), render_wmma),
   (UPat(Ops.BARRIER, name="x"), lambda ctx, x: [ctx.barrier]),
-  
 ])
 
 class PTXRenderer(Renderer):
@@ -174,101 +175,168 @@ class PTXRenderer(Renderer):
     for u in uops:
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
-      # l = self.string_rewrite.rewrite(u, ctx=self)
-      # kernel.extend(l)
-      if uop is Ops.IF:
-        l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(*l)
-      elif uop is Ops.BARRIER and self.barrier:
-        l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(*l)
-      elif uop is Ops.ENDRANGE:
+      if uop is Ops.ENDRANGE:
         ssa("pred", u, dtype="pred")
-        l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(*l)
+      elif uop is Ops.RANGE:
+        ssa("ridx", u)
+      elif uop in GroupOp.ALU:
+        ssa("alu", u)
+      elif uop is Ops.DEFINE_ACC:
+        ssa('acc', u)
+        _const = render_val(u.src[0].arg, u.dtype)
+        self.extra[u] = _const
+      elif uop is Ops.SPECIAL:
+        r[u] = "%" + args[0]
+      elif uop is Ops.DEFINE_VAR:
+        raise RuntimeError("unhandled")
+      elif uop is Ops.CONST:
+        ssa("const", u, dtype=self.types[dtype])
+      elif uop is Ops.GEP:
+        assert len(u.arg) == 1
+        r[u] = r[src[0]][u.arg[0]]
+        continue
+      elif uop is Ops.LOAD:
+        assert src[0].dtype == dtypes.int64, "load isn't int64"
+        r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa('val', u)
+      elif uop is Ops.VECTORIZE:
+        r[u] = [cast(str,r[x]) for x in src]
+        continue
+      elif uop in {Ops.CAST, Ops.BITCAST}:
+        if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
+          r[u] = r[src[0]]
+          continue
+        ssa('cast', u, self.types[dtype])
+      elif uop is Ops.DEFINE_LOCAL:
+        ssa('local', u, self.types[dtypes.ulong])
+      elif uop is Ops.DEFINE_GLOBAL:
+        bufs.append((nm:=f"data{args}", dtype))
+        dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
+        register_var = ssa('dat', u, self.types[dt])
+        r[u] = register_var
+        self.extra[u] = nm
+      elif uop is Ops.WMMA:
+        self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
+        r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
+
+      
+      l = self.string_rewrite.rewrite(u, ctx=self)
+      kernel.extend(l)
+
+      if uop is Ops.ASSIGN:
+        r[u] = r[src[0]]
+      elif uop is Ops.SPECIAL:
+        kernel = [f".reg .u32 %{args[0]};"] + kernel
+      
+
+
+      if uop is Ops.IF:
+        # l = self.string_rewrite.rewrite(u, ctx=self)
+        # kk(*l)
+        pass
+      elif uop is Ops.BARRIER and self.barrier:
+        # l = self.string_rewrite.rewrite(u, ctx=self)
+        # kk(*l)
+        pass
+      elif uop is Ops.ENDRANGE:
+        # ssa("pred", u, dtype="pred")
+        # l = self.string_rewrite.rewrite(u, ctx=self)
+        # kk(*l)
+        pass
       elif uop is Ops.ENDIF:
-        l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(*l)
+        # l = self.string_rewrite.rewrite(u, ctx=self)
+        # kk(*l)
+        pass
       elif uop is Ops.STORE:
-        assert src[0].dtype == dtypes.int64, "store isn't int64"
-        l = self.string_rewrite.rewrite(u, ctx=self)
-        kk(*l)
+        # assert src[0].dtype == dtypes.int64, "store isn't int64"
+        # l = self.string_rewrite.rewrite(u, ctx=self)
+        # kk(*l)
+        pass
       else:
         if uop is Ops.RANGE:
-          ssa('ridx', u)
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # ssa('ridx', u)
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop in GroupOp.ALU:
-          ssa("alu", u)
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # ssa("alu", u)
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop is Ops.DEFINE_ACC:
-          acc = ssa('acc', u)
-          _const = render_val(u.src[0].arg, u.dtype)
-          r[u] = [acc, _const]
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          r[u] = acc
-          kk(*l)
+          # ssa('acc', u)
+          # _const = render_val(u.src[0].arg, u.dtype)
+          # self.extra[u] = _const
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop is Ops.SPECIAL:
-          assert args[0][0] != "i", "idx not supported"
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
-          r[u] = "%" + args[0]
-          kernel = [f".reg .u32 %{args[0]};"] + kernel
+          # assert args[0][0] != "i", "idx not supported"
+          pass
+          # r[u] = "%" + args[0]
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
         elif uop is Ops.DEFINE_VAR:
           raise RuntimeError("unhandled")
         elif uop is Ops.CONST:
-          out = ssa('const', u=u, dtype=self.types[dtype])
-          l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
-          kk(*l)
-          r[u] = out
+          # out = ssa('const', u=u, dtype=self.types[dtype])
+          # l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
+          # kk(*l)
+          # r[u] = out
+          pass
         elif uop is Ops.GEP:
-          assert len(u.arg) == 1
-          r[u] = r[src[0]][u.arg[0]]
+          # assert len(u.arg) == 1
+          # r[u] = r[src[0]][u.arg[0]]
+          pass
         elif uop is Ops.LOAD:
-          assert src[0].dtype == dtypes.int64, "load isn't int64"
-          if dtype.count > 1:
-            r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-            l = self.string_rewrite.rewrite(u, ctx=self)
-            kk(*l)
-          else:
-            ssa('val', u)
-            l = self.string_rewrite.rewrite(u, ctx=self)
-            kk(*l)
+          # assert src[0].dtype == dtypes.int64, "load isn't int64"
+          # if dtype.count > 1:
+          #   r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
+          #   l = self.string_rewrite.rewrite(u, ctx=self)
+          #   kk(*l)
+          # else:
+          #   ssa('val', u)
+          #   l = self.string_rewrite.rewrite(u, ctx=self)
+          #   kk(*l)
+          pass
         elif uop is Ops.ASSIGN:
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
-          r[u] = r[src[0]]
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          # r[u] = r[src[0]]
+          pass
         # NOTE: casting to str is fine because you can't vectorize a vectorize
         elif uop is Ops.VECTORIZE:
-          r[u] = [cast(str,r[x]) for x in src]
-          continue
+          # r[u] = [cast(str,r[x]) for x in src]
+          # continue
+          pass
         elif uop in {Ops.CAST, Ops.BITCAST}:
-          if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
-            r[u] = r[src[0]]
-            continue
-          ssa('cast', u, self.types[dtype])
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
+          #   r[u] = r[src[0]]
+          #   continue
+          # ssa('cast', u, self.types[dtype])
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop is Ops.DEFINE_LOCAL:
-          ssa('local', u, self.types[dtypes.ulong])
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # ssa('local', u, self.types[dtypes.ulong])
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop is Ops.DEFINE_GLOBAL:
-          bufs.append((nm:=f"data{args}", dtype))
-          dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
-          register_var = ssa('dat', u, self.types[dt])
-          r[u] = register_var
-          self.extra[u] = nm
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # bufs.append((nm:=f"data{args}", dtype))
+          # dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
+          # register_var = ssa('dat', u, self.types[dt])
+          # r[u] = register_var
+          # self.extra[u] = nm
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         elif uop is Ops.WMMA:
-          self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
-          r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-          l = self.string_rewrite.rewrite(u, ctx=self)
-          kk(*l)
+          # self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
+          # r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
+          # l = self.string_rewrite.rewrite(u, ctx=self)
+          # kk(*l)
+          pass
         else: raise NotImplementedError(f"no code for {uop}")
-
 
     return self.render_kernel(kernel, name, bufs, c.items())
 
