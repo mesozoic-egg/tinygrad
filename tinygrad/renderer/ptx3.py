@@ -111,6 +111,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.ENDRANGE, name="x"), render_endrange),
   (UPat(Ops.DEFINE_LOCAL, name="x"), lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
   (UPat(Ops.IF, name="x"), lambda ctx, x: [f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};"]),
+  (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
   (UPat(Ops.WMMA, name="x"), render_wmma),
   
 ])
@@ -174,14 +175,16 @@ class PTXRenderer(Renderer):
       if uop is Ops.IF:
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(*l)
-
-      elif uop is Ops.BARRIER and self.barrier: kk(self.barrier)
+      elif uop is Ops.BARRIER and self.barrier:
+        kk(self.barrier)
       elif uop is Ops.ENDRANGE:
         ssa("pred", u, dtype="pred")
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(*l)
       elif uop is Ops.ENDIF:
-        kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
+        l = self.string_rewrite.rewrite(u, ctx=self)
+        kk(*l)
+        # kk(f"IF_{r[src[0].src[0]][1:]}_{uops.index(src[0])}:")
       elif uop is Ops.STORE:
         assert src[0].dtype == dtypes.int64, "store isn't int64"
         l = self.string_rewrite.rewrite(u, ctx=self)
