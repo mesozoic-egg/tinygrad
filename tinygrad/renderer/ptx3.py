@@ -236,7 +236,9 @@ class PTXRenderer(Renderer):
           kk(*l)
           r[u] = r[src[0]]
         # NOTE: casting to str is fine because you can't vectorize a vectorize
-        elif uop is Ops.VECTORIZE: r[u] = [cast(str,r[x]) for x in src]
+        elif uop is Ops.VECTORIZE:
+          r[u] = [cast(str,r[x]) for x in src]
+          continue
         elif uop in {Ops.CAST, Ops.BITCAST}:
           if src[0].dtype == dtype or isinstance(src[0].dtype, PtrDType):
             r[u] = r[src[0]]
@@ -248,7 +250,6 @@ class PTXRenderer(Renderer):
           ssa('local', u, self.types[dtypes.ulong])
           l = self.string_rewrite.rewrite(u, ctx=self)
           kk(*l)
-
         elif uop is Ops.DEFINE_GLOBAL:
           bufs.append((nm:=f"data{args}", dtype))
           dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
@@ -263,7 +264,6 @@ class PTXRenderer(Renderer):
           l = self.string_rewrite.rewrite(u, ctx=self)
           r[u] = r[u][-dtype.count:]
           kk(*l)
-          pass
         else: raise NotImplementedError(f"no code for {uop}")
 
     return self.render_kernel(kernel, name, bufs, c.items())
