@@ -27,7 +27,6 @@ def schedule(a: Tensor):
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
-  print(kernel.uops[-1])
   src = renderer.render("rendered", kernel.uops)
   return src
 
