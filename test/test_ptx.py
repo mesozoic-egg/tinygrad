@@ -7,7 +7,6 @@ from tinygrad.renderer.ptx import PTXRenderer
 from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import ClangRenderer, CUDARenderer
 from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
-from tinygrad.renderer.ptx3 import PTXRenderer as PTXRenderer3
 from tinygrad.helpers import Context, NOOPT
 
 from typing import List
@@ -15,8 +14,7 @@ from typing import List
 clang_renderer = ClangRenderer()
 cuda_renderer = CUDARenderer("sm_86")
 ptx_renderer = PTXRenderer("sm_86")
-ptx_renderer2 = PTXRenderer2()
-ptx_renderer3 = PTXRenderer3("sm_86")
+ptx_renderer2 = PTXRenderer2("sm_86")
 
 def schedule(a: Tensor):
   scheduled, vars = a.schedule_with_vars() 
@@ -67,7 +65,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
   src0 = render2(uops, ptx_renderer)
-  src1 = render2(uops, ptx_renderer3)
+  src1 = render2(uops, ptx_renderer2)
   assert src0 == src1
 
 
@@ -75,7 +73,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
 def compare_ptx(a: Tensor):
   ast = schedule(a)
   src0 = render(ast, PTXRenderer("sm_86"))
-  src1 = render(ast, ptx_renderer3)
+  src1 = render(ast, ptx_renderer2)
   assert src0 == src1
 
 def test_addition():
