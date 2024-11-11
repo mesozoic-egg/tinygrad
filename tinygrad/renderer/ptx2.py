@@ -93,9 +93,7 @@ def render_wmma(ctx, x):
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
-  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [
-    f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};",
-   ]), 
+  (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [data{x.arg}+0];"]),
   (UPat((BinaryOps.CMPLT, BinaryOps.CMPNE), name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.src[0].dtype, ctx.types[x.src[0].dtype])]),
   (UPat(GroupOp.ALU, name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])]),
@@ -182,20 +180,14 @@ class PTXRenderer(Renderer):
           r[u] = r[src[0]]
           continue
         ssa('cast', u, self.types[dtype])
-      elif uop is Ops.ENDRANGE:
-        ssa("pred", u, dtype="pred")
-      elif uop is Ops.RANGE:
-        ssa("ridx", u)
-      elif uop in GroupOp.ALU:
-        ssa("alu", u)
+      elif uop is Ops.ENDRANGE: ssa("pred", u, dtype="pred")
+      elif uop is Ops.RANGE: ssa("ridx", u)
+      elif uop in GroupOp.ALU: ssa("alu", u)
       elif uop is Ops.DEFINE_ACC:
         r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
-      elif uop is Ops.SPECIAL:
-        r[u] = "%" + args[0]
-      elif uop is Ops.DEFINE_VAR:
-        raise RuntimeError("unhandled")
-      elif uop is Ops.CONST:
-        ssa("const", u, dtype=self.types[dtype])
+      elif uop is Ops.SPECIAL: r[u] = "%" + args[0]
+      elif uop is Ops.DEFINE_VAR: raise RuntimeError("unhandled")
+      elif uop is Ops.CONST: ssa("const", u, dtype=self.types[dtype])
       elif uop is Ops.LOAD:
         assert src[0].dtype == dtypes.int64, "load isn't int64"
         r[u] = [ssa('val', dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa('val', u)
@@ -207,12 +199,10 @@ class PTXRenderer(Renderer):
       elif uop is Ops.WMMA:
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-      l = self.string_rewrite.rewrite(u, ctx=self)
+      if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
       kernel.extend(l)
 
-      if uop is Ops.ASSIGN:
-        r[u] = r[src[0]]
-      elif uop is Ops.SPECIAL:
-        kernel = [f".reg .u32 %{args[0]};"] + kernel
+      if uop is Ops.ASSIGN: r[u] = r[src[0]]
+      elif uop is Ops.SPECIAL: kernel = [f".reg .u32 %{args[0]};"] + kernel
     return self.render_kernel(kernel, name, bufs, c.items())
 
