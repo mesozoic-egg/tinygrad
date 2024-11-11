@@ -73,7 +73,6 @@ def render_endrange(ctx, x):
 
 def render_store(ctx, x, bidx, var):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
-  print("memtype render store", mem_type)
   return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_load(ctx, x):
@@ -85,8 +84,6 @@ def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
   n_operands = tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
   wmma = ctx.r[x][:-x.dtype.count]
-  print(f"{wmma=}")
-  print(f"{ctx.r[x]=}")
   dt_map = { dtypes.half: "f16" }
   ret = []
   _i = 0

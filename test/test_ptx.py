@@ -33,14 +33,6 @@ def render(ast: UOp, renderer: Renderer):
 def render2(uops: List[UOp], renderer: Renderer):
   return renderer.render("rendererd", uops)
 
-def compare2(uops: List[UOp]):
-  src0 = render2(uops, PTXRenderer("sm_86"))
-  print(src0)
-  # src1 = render2(u, PTXRenderer2())
-  # print("src1")
-  # print(src1)
-  # assert src0 == src1
-  
 def test_const():
   store()
 
@@ -75,11 +67,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
   src0 = render2(uops, ptx_renderer)
-  print(src0)
   src1 = render2(uops, ptx_renderer3)
-  print(src1)
-  # src2 = render2(uops, cuda_renderer)
-  # print(src2)
   assert src0 == src1
 
 
@@ -87,9 +75,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
 def compare_ptx(a: Tensor):
   ast = schedule(a)
   src0 = render(ast, PTXRenderer("sm_86"))
-  print(src0)
   src1 = render(ast, ptx_renderer3)
-  print(src1)
   assert src0 == src1
 
 def test_addition():
