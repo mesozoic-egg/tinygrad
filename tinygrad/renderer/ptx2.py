@@ -74,12 +74,12 @@ def render_store(ctx, x, bidx, var):
   else:
     return [f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
-def render_load(ctx, x):
+def render_load(ctx, x, bidx):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
   if x.dtype.count > 1:
-    return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[x.src[0]]}+0];"]
+    return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[bidx]}+0];"]
   else:
-    return [f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[x.src[0]]}+0];"]
+    return [f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[bidx]}+0];"]
 
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
@@ -107,7 +107,7 @@ string_rewrite = PatternMatcher([
   (UPat(GroupOp.ALU, name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: [f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
-  (UPat(Ops.LOAD, name="x"), render_load),
+  (UPat(Ops.LOAD, name="x", src=(UPat.var('bidx'),), allow_any_len=True), render_load),
   (UPat(Ops.DEFINE_ACC, name="x"), render_acc),
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"]),
