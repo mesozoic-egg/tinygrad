@@ -118,3 +118,9 @@ def test_matmul():
   b = Tensor.empty(16, 16)
   c = a.dot(b)
   compare_ptx(c)
+
+def test_wmma():
+  a = Tensor.empty(16, 16, dtype=dtypes.half)
+  b = Tensor.empty(16, 8, dtype=dtypes.half)
+  r = a.matmul(b, acc_dtype=dtypes.float)
+  compare_ptx(r)
