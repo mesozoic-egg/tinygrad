@@ -223,9 +223,6 @@ class PTXRenderer(Renderer):
             continue
           ssa('cast', u, self.types[dtype])
           l = self.string_rewrite.rewrite(u, ctx=self)
-          print("cast")
-          print(u)
-          print(l)
           kk(l)
         elif uop is Ops.DEFINE_LOCAL:
           ssa('local', u, self.types[dtypes.ulong])
@@ -241,6 +238,7 @@ class PTXRenderer(Renderer):
           r[u] = register_var
           kk(l)
         elif uop is Ops.WMMA:
+          raise RuntimeError("not handled")
           _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = args
           wmma, n_operands = [], tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
           dt_map = { dtypes.half: "f16" }
