@@ -98,7 +98,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [
     f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};",
    ]), 
-  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [{ctx.extra[x]}+0];"]),
+  (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [data{x.arg}+0];"]),
   (UPat((BinaryOps.CMPLT, BinaryOps.CMPNE), name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.src[0].dtype, ctx.types[x.src[0].dtype])]),
   (UPat(GroupOp.ALU, name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
@@ -206,11 +206,10 @@ class PTXRenderer(Renderer):
       elif uop is Ops.DEFINE_LOCAL:
         ssa('local', u, self.types[dtypes.ulong])
       elif uop is Ops.DEFINE_GLOBAL:
-        bufs.append((nm:=f"data{args}", dtype))
+        bufs.append((f"data{args}", dtype))
         dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
         register_var = ssa('dat', u, self.types[dt])
         r[u] = register_var
-        self.extra[u] = nm
       elif uop is Ops.WMMA:
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
