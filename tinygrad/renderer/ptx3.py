@@ -69,7 +69,7 @@ def render_endrange(ctx, x):
   return [k0_1, k2]
 
 def render_store(ctx, x, bidx, var):
-  mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
+  mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
   return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};" if var.dtype.count > 1 else f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_load(ctx, x):
