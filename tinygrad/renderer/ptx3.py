@@ -158,8 +158,6 @@ class PTXRenderer(Renderer):
     kernel:List[str] = []
     bufs = []
 
-    def kk(*s: str): kernel.append("\n".join(s))
-
     c: DefaultDict[str, int] = defaultdict(int)
     r: Dict[UOp, Union[List[str], str]] = {}
     self.r = r
