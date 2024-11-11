@@ -112,6 +112,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.IF, name="x"), lambda ctx, x: [f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};"]),
   (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
   (UPat(Ops.WMMA, name="x"), render_wmma),
+  (UPat(Ops.BARRIER, name="x"), lambda ctx, x: [ctx.barrier]),
   
 ])
 
@@ -172,12 +173,15 @@ class PTXRenderer(Renderer):
     self.uops = uops
     for u in uops:
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
+
+      # l = self.string_rewrite.rewrite(u, ctx=self)
+      # kernel.extend(l)
       if uop is Ops.IF:
         l = self.string_rewrite.rewrite(u, ctx=self)
         kk(*l)
       elif uop is Ops.BARRIER and self.barrier:
-        kk(self.barrier)
-        continue
+        l = self.string_rewrite.rewrite(u, ctx=self)
+        kk(*l)
       elif uop is Ops.ENDRANGE:
         ssa("pred", u, dtype="pred")
         l = self.string_rewrite.rewrite(u, ctx=self)
@@ -261,10 +265,7 @@ class PTXRenderer(Renderer):
         elif uop is Ops.WMMA:
           self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
           r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-          # r[u].extend([ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]) 
-          # self.extra[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
           l = self.string_rewrite.rewrite(u, ctx=self)
-          # r[u] = r[u][-dtype.count:]
           kk(*l)
         else: raise NotImplementedError(f"no code for {uop}")
 
