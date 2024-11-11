@@ -207,9 +207,7 @@ class PTXRenderer(Renderer):
         ssa('local', u, self.types[dtypes.ulong])
       elif uop is Ops.DEFINE_GLOBAL:
         bufs.append((f"data{args}", dtype))
-        dt = dtypes.ulong if dtype.__class__ == PtrDType else dtype
-        register_var = ssa('dat', u, self.types[dt])
-        r[u] = register_var
+        r[u] = ssa('dat', u, self.types[dtypes.ulong if dtype.__class__ == PtrDType else dtype])
       elif uop is Ops.WMMA:
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
