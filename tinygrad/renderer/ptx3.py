@@ -57,7 +57,7 @@ ptx_matcher = PatternMatcher([
 
 def render_acc(ctx, x):
   if x.dtype.count > 1:
-    raise RuntimeError("Unhandled")
+    return [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.extra[x]};" for uu in ctx.r[x]]
   else:
     return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {ctx.extra[x]};"]
 
@@ -178,8 +178,12 @@ class PTXRenderer(Renderer):
       elif uop in GroupOp.ALU:
         ssa("alu", u)
       elif uop is Ops.DEFINE_ACC:
-        ssa('acc', u)
-        _const = render_val(u.src[0].arg, u.dtype)
+        if dtype.count > 1:
+          r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
+          _const = render_val(u.src[0].src[0].arg, dtype.scalar())
+        else:
+          r[u] = ssa("acc", u)
+          _const = render_val(u.src[0].arg, u.dtype)
         self.extra[u] = _const
       elif uop is Ops.SPECIAL:
         r[u] = "%" + args[0]

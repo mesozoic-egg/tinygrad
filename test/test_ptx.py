@@ -27,6 +27,7 @@ def schedule(a: Tensor):
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
+  print(kernel.uops[-1])
   src = renderer.render("rendered", kernel.uops)
   return src
 
@@ -67,6 +68,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
   src0 = render2(uops, ptx_renderer)
+  print(src0)
   src1 = render2(uops, ptx_renderer3)
   assert src0 == src1
 
@@ -84,7 +86,7 @@ def test_addition():
   compare_ptx(b)
 
 def _sum():
-  a = Tensor.empty(16, 16).contiguous()
+  a = Tensor.empty(64, 64).contiguous()
   b = a.sum(0)
   compare_ptx(b)
 
@@ -110,3 +112,25 @@ def test_wmma():
   b = Tensor.empty(16, 8, dtype=dtypes.half)
   r = a.matmul(b, acc_dtype=dtypes.float)
   compare_ptx(r)
+
+def test_acc_vec():
+  const_0 = UOp(Ops.CONST, dtypes.int, arg=0, src=())
+  const_64 = UOp(Ops.CONST, dtypes.int, arg=64, src=())
+  _range = UOp(Ops.RANGE, dtypes.int, arg=(1, True), src=(
+    const_0,
+    const_64
+  ))
+  const_0_0 = UOp(Ops.CONST, dtypes.float, arg=0.0, src=())
+  vec = UOp(Ops.VECTORIZE, dtypes.float.vec(4), arg=None, src=(
+    const_0_0,
+    const_0_0,
+    const_0_0,
+    const_0_0,
+  ))
+     
+  acc = UOp(Ops.DEFINE_ACC, dtypes.float.vec(4), arg=(0, ), src=(
+    vec,
+    _range 
+  ))
+  print("dtype", acc.dtype.scalar())
+  store([const_0, const_64, _range, const_0_0, vec, acc])
