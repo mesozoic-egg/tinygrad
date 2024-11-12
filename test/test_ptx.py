@@ -1,7 +1,7 @@
 import os
 import pytest
-from tinygrad import Tensor, Device, dtypes
-from tinygrad.ops import Ops, UOp, Variable, sym_infer, sint, print_uops
+from tinygrad import Tensor, Device, dtypes, Variable
+from tinygrad.ops import Ops, UOp, sym_infer, sint, print_uops
 from tinygrad.engine.realize import get_kernel
 from tinygrad.renderer.ptx import PTXRenderer
 from tinygrad.renderer import Renderer
@@ -129,3 +129,15 @@ def test_acc_vec():
     _range 
   ))
   store([const_0, const_64, _range, const_0_0, vec, acc])
+
+def test_var_in_special():
+  vi = Variable("i", 1, 10).bind(9)
+  a = Tensor.empty(vi, 8)
+  b = Tensor.empty(8, 4)
+  c = a.dot(b)
+  compare_ptx(c)
+    
+def test_var_in_tensor():
+  vi = Variable("i", 1, 10).bind(8)
+  a = Tensor(vi) + 1
+  compare_ptx(a)

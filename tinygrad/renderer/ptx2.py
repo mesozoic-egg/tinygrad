@@ -112,6 +112,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
   (UPat(Ops.WMMA, name="x"), render_wmma),
   (UPat(Ops.BARRIER, name="x"), lambda ctx, x: [ctx.barrier]),
+  (UPat(Ops.DEFINE_VAR, name="x"), lambda ctx, x: [f"ld.param.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{x.arg[0]}+0];"]),
 ])
 
 class PTXRenderer(Renderer):
@@ -186,7 +187,10 @@ class PTXRenderer(Renderer):
       elif uop is Ops.DEFINE_ACC:
         r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
       elif uop is Ops.SPECIAL: r[u] = "%" + args[0]
-      elif uop is Ops.DEFINE_VAR: raise RuntimeError("unhandled")
+      elif uop is Ops.DEFINE_VAR:
+        bufs.append((args[0], dtype))
+        r[u] = f"%{args[0]}"
+        ssa("dat", u, self.types[dtype])
       elif uop is Ops.CONST: ssa("const", u, dtype=self.types[dtype])
       elif uop is Ops.LOAD:
         assert src[0].dtype == dtypes.int64, "load isn't int64"
