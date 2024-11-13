@@ -73,9 +73,7 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
 def compare_ptx2(a: UOp):
   uops = linearize_uop(full_graph_rewrite(a, ptx_renderer))  
   ptx_src = ptx_renderer.render("rendered", uops)
-  print(ptx_src)
   ptx2_src = ptx_renderer2.render("rendered", uops)
-  print(ptx2_src)
   assert ptx_src == ptx2_src
   
 
