@@ -156,3 +156,12 @@ def test_gated_store():
   gated_alu_store = UOp(Ops.STORE, dtypes.void, (a.index(lidx0, gate_alu), UOp.const(dtypes.int, 1)))
   sink = UOp(Ops.SINK, dtypes.void, (gated_alu_store,))
   compare_ptx2(sink)
+
+def test_gated_store_if():
+  a = UOp(Ops.DEFINE_GLOBAL, dtypes.int.ptr(), (), 0)
+  gate_alu = (lidx0:=UOp(Ops.SPECIAL, dtypes.int, (), ('lidx0', 4))).ne(0)
+  val = UOp.const(dtypes.int, 1)
+  if_uop = UOp(Ops.IF, dtypes.void, (gate_alu,))
+  gated_alu_store = UOp(Ops.STORE, dtypes.void, (a.index(lidx0, if_uop), val))
+  sink = UOp(Ops.SINK, dtypes.void, (gated_alu_store,))
+  compare_ptx2(sink)
