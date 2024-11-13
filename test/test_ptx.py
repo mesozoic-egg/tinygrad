@@ -8,6 +8,8 @@ from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import ClangRenderer, CUDARenderer
 from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
 from tinygrad.helpers import Context, NOOPT
+from tinygrad.codegen.uopgraph import full_graph_rewrite
+from tinygrad.codegen.linearize import linearize_uop
 
 from typing import List
 
@@ -68,6 +70,12 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   src1 = render2(uops, ptx_renderer2)
   assert src0 == src1
 
+def compare_ptx2(a: UOp):
+  uops = linearize_uop(full_graph_rewrite(a, ptx_renderer))  
+  ptx_src = ptx_renderer.render("rendered", uops)
+  ptx2_src = ptx_renderer2.render("rendered", uops)
+  assert ptx_src == ptx2_src
+  
 
 
 def compare_ptx(a: Tensor):
@@ -141,3 +149,10 @@ def test_var_in_tensor():
   vi = Variable("i", 1, 10).bind(8)
   a = Tensor(vi) + 1
   compare_ptx(a)
+
+def test_gated_store():
+  a = UOp(Ops.DEFINE_GLOBAL, dtypes.int.ptr(), (), 0)
+  gate_alu = (lidx0:=UOp(Ops.SPECIAL, dtypes.int, (), ('lidx0', 4))).ne(0)
+  gated_alu_store = UOp(Ops.STORE, dtypes.void, (a.index(lidx0, gate_alu), UOp.const(dtypes.int, 1)))
+  sink = UOp(Ops.SINK, dtypes.void, (gated_alu_store,))
+  compare_ptx2(sink)

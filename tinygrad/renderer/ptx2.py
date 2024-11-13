@@ -61,12 +61,13 @@ def render_acc(ctx, x):
   else:
     return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {render_val(x.src[0].arg, x.dtype)};"]
 
-def render_store(ctx, x, bidx, var):
+def render_store(ctx, x, bidx, var, pred=None):
   mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
+  gate = f"@{ctx.r[pred]} " if pred is not None and pred.op is not Ops.IF else ""
   if var.dtype.count > 1:
-    return [f"st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};"]
+    return [f"{gate}st.{mem_type}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};"]
   else:
-    return [f"st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
+    return [f"{gate}st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_load(ctx, x, bidx):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
@@ -92,7 +93,7 @@ def render_wmma(ctx, x):
   
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
-  (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var")), allow_any_len=True), render_store),
+  (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var"), UPat.var("pred")), allow_any_len=True), render_store),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [data{x.arg}+0];"]),
   (UPat((BinaryOps.CMPLT, BinaryOps.CMPNE), name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.src[0].dtype, ctx.types[x.src[0].dtype])]),
