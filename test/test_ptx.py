@@ -73,7 +73,9 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
 def compare_ptx2(a: UOp):
   uops = linearize_uop(full_graph_rewrite(a, ptx_renderer))  
   ptx_src = ptx_renderer.render("rendered", uops)
+  print(ptx_src)
   ptx2_src = ptx_renderer2.render("rendered", uops)
+  print(ptx2_src)
   assert ptx_src == ptx2_src
   
 
@@ -165,3 +167,19 @@ def test_gated_store_if():
   gated_alu_store = UOp(Ops.STORE, dtypes.void, (a.index(lidx0, if_uop), val))
   sink = UOp(Ops.SINK, dtypes.void, (gated_alu_store,))
   compare_ptx2(sink)
+
+def Special(expr, nmax): return UOp(Ops.SPECIAL, dtypes.int, (), (expr, nmax))
+def test_gated_load():
+    gidx0 = Special("gidx0", 5)
+    lidx0 = Special("lidx0", 4)
+    gate = (gidx0*4+lidx0).lt(19).ne(True)
+    idx = gidx0*4+lidx0-19
+    glbl0 = UOp(Ops.DEFINE_GLOBAL, dtypes.int.ptr(), (), 0)
+    idx = UOp.const(dtypes.int, 0)
+    ld = UOp(Ops.LOAD, dtypes.float, (
+      UOp(Ops.DEFINE_GLOBAL, dtypes.float.ptr(), arg=0).index(gate, idx),
+      UOp.const(dtypes.float, 0.0)
+    ))
+    store = UOp(Ops.STORE, dtypes.void, (glbl0.index(idx), ld))
+    sink = UOp(Ops.SINK, dtypes.void, (store,))
+    compare_ptx2(sink)
