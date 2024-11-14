@@ -120,7 +120,9 @@ class PTXRenderer(Renderer):
     kernel:List[str] = []
     bufs = []
 
-    def kk(*s: str): kernel.append("\n".join(s))
+    def kk(*s: str):
+      print(*s)
+      kernel.append("\n".join(s))
 
     c: DefaultDict[str, int] = defaultdict(int)
     r: Dict[UOp, Union[List[str], str]] = {}
@@ -145,6 +147,8 @@ class PTXRenderer(Renderer):
       return ret
 
     for u in uops:
+      print('\n')
+      print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
         pred_reg = _cast(r[src[0]], dtypes.bool, src[0].dtype, u=u, pred=True)
