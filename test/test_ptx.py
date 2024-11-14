@@ -72,15 +72,18 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   compare_kernels(kernels0, kernels1)
   assert src0 == src1
 
+
 def compare_kernels(k0, k1):
-  for uop in k0.keys():
-    if k0[uop] != k1[uop]:
-      print(uop)
-      print("k0")
-      print(k0[uop])
-      print("k1")
-      print(k1[uop])
-      raise RuntimeError("Comparison failed")
+  for k0_pairs, k1_pairs in zip(k0.items(), k1.items()):
+    uop_0, kernels_0 = k0_pairs
+    uop_1, kernels_1 = k1_pairs
+    if kernels_0 != kernels_1:
+      print(uop_0)
+      print("kernel0")
+      print(kernels_0)
+      print("kernel1")
+      print(kernels_1)
+      raise RuntimeError("Kernel mismatch")
 
 def compare_ptx2(a: UOp):
   uops = linearize_uop(full_graph_rewrite(a, ptx_renderer))  
