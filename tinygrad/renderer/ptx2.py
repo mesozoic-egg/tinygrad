@@ -62,13 +62,6 @@ def render_store(ctx, x, bidx, var, pred=None):
   else:
     return [f"{gate}st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
-def render_load(ctx, x, loc):
-  mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
-  if x.dtype.count > 1:
-    return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];"]
-  else:
-    return [f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"]
-
 def mem_type(x: UOp): return 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
 
 def render_wmma(ctx, x):
@@ -105,7 +98,10 @@ string_rewrite = PatternMatcher([
     f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
     f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
   ]),
-  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), render_load),
+  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), lambda ctx, x, loc: [
+    f" ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];" if x.dtype.count > 1 else \
+    f"ld.{mem_type(x)}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"
+  ]),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.half),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE),), allow_any_len=True), lambda ctx, x, pred_vec: [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};" for i, uu in enumerate(ctx.r[x])]),
@@ -216,7 +212,9 @@ class PTXRenderer(Renderer):
       elif uop is Ops.WMMA:
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
-      if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
+      if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None:
+        print(u)
+        raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
       kernel.extend(l)
       kernel_uop[u].extend(l)
 
