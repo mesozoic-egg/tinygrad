@@ -54,13 +54,6 @@ ptx_matcher = PatternMatcher([
   (UPat.var("x") >> UPat.var("y"), lambda x,y: UOp(Ops.SHR, x.dtype, (x,y.cast(dtypes.uint))) if y.dtype != dtypes.uint else None),
 ])
 
-
-def render_acc(ctx, x, pred, mov=""):
-  if x.dtype.count > 1:
-    return [mov] + [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred] if mov else render_val(x.src[0].src[0].arg, x.dtype.scalar())};" for uu in ctx.r[x]]
-  else:
-    return [mov, f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {ctx.r[pred] if mov else render_val(x.src[0].arg, x.dtype)};"]
-
 def render_store(ctx, x, bidx, var, pred=None):
   mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
   gate = f"@{ctx.r[pred]} " if pred is not None and pred.op is not Ops.IF else ""
@@ -175,8 +168,6 @@ class PTXRenderer(Renderer):
 
     self.uops = uops
     for u in uops:
-      print('\n')
-      print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
       if uop is Ops.VECTORIZE:
@@ -197,8 +188,6 @@ class PTXRenderer(Renderer):
       elif uop is Ops.DEFINE_ACC:
         if dtype.scalar() in [dtypes.half, dtypes.bool]:
           r[src[0]] = [ssa("const", src[0].src[0]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("const", src[0])
-          print("r for define acc")
-          print(r[src[0]])
         r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
       elif uop is Ops.SPECIAL: r[u] = "%" + args[0]
       elif uop is Ops.DEFINE_VAR:
@@ -218,7 +207,6 @@ class PTXRenderer(Renderer):
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
       if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
-      print(l)
       kernel.extend(l)
 
       if uop is Ops.ASSIGN: r[u] = r[src[0]]
