@@ -1,6 +1,6 @@
 from typing import DefaultDict, Dict, List, Union, Optional, cast, Callable, Tuple
 import struct
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from tinygrad.ops import BinaryOps, UnaryOps, TernaryOps, Ops, UOp, PatternMatcher, UPat, GroupOp
 from tinygrad.dtype import dtypes, DType, PtrDType, ConstType
 from tinygrad.renderer import Renderer
@@ -120,10 +120,13 @@ class PTXRenderer(Renderer):
     kernel:List[str] = []
     bufs = []
 
-    kernel_uop = defaultdict(list) 
+    kernel_uop = OrderedDict() 
     current_uop = None
     def kk(*s: str):
-      kernel_uop[current_uop].extend(s)
+      if kernel_uop.get(current_uop):
+        kernel_uop[current_uop].extend(s)
+      else:
+        kernel_uop[current_uop] = list(s)
       kernel.append("\n".join(s))
 
     c: DefaultDict[str, int] = defaultdict(int)

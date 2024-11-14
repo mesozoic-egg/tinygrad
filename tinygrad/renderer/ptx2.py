@@ -1,6 +1,6 @@
 from typing import DefaultDict, Dict, List, Union, Optional, cast, Callable, Tuple
 import struct
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from tinygrad.ops import BinaryOps, UnaryOps, TernaryOps, Ops, UOp, PatternMatcher, UPat, GroupOp
 from tinygrad.dtype import dtypes, DType, PtrDType, ConstType
 from tinygrad.renderer import Renderer
@@ -172,7 +172,7 @@ class PTXRenderer(Renderer):
       return f"%{prefix}{c[prefix]-1}"
 
     self.uops = uops
-    kernel_uop = defaultdict(list)
+    kernel_uop = OrderedDict()
     for u in uops:
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
@@ -216,7 +216,7 @@ class PTXRenderer(Renderer):
         print(u)
         raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
       kernel.extend(l)
-      kernel_uop[u].extend(l)
+      kernel_uop[u] = l
 
       if uop is Ops.ASSIGN: r[u] = r[src[0]]
       elif uop is Ops.SPECIAL: kernel = [f".reg .u32 %{args[0]};"] + kernel

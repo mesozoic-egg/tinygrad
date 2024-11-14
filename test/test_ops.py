@@ -35,25 +35,20 @@ if CI:
 FORWARD_ONLY = getenv("FORWARD_ONLY", 0)
 PRINT_TENSORS = getenv("PRINT_TENSORS", 0)
 
-def compare_kernels(k0, k1):
-  for uop in k0.keys():
-    if k0[uop] != k1[uop]:
-      print(uop)
-      print("k0")
-      print(k0[uop])
-      print("k1")
-      print(k1[uop])
-      raise RuntimeError("Comparison failed")
 
 def compare_kernels(k0, k1):
-  for uop in k0.keys():
-    if k0[uop] != k1[uop]:
-      print(uop)
-      print("k0")
-      print(k0[uop])
-      print("k1")
-      print(k1[uop])
-      raise RuntimeError("Comparison failed")
+  for k0_pairs, k1_pairs in zip(k0.items(), k1.items()):
+    uop_0, kernels_0 = k0_pairs
+    uop_1, kernels_1 = k1_pairs
+    if kernels_0 != kernels_1:
+      print(uop_0)
+      print("kernel0")
+      print(kernels_0)
+      print("kernel1")
+      print(kernels_1)
+      raise RuntimeError("Kernel mismatch")
+    
+    
 def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, grad_atol=1e-4, grad_rtol=1e-3,
                    forward_only=False, vals=None, low=-2, high=2):
   if tinygrad_fxn is None: tinygrad_fxn = torch_fxn
