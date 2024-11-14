@@ -55,11 +55,11 @@ ptx_matcher = PatternMatcher([
 ])
 
 
-def render_acc(ctx, x):
+def render_acc(ctx, x, pred, mov=""):
   if x.dtype.count > 1:
-    return [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(x.src[0].src[0].arg, x.dtype.scalar())};" for uu in ctx.r[x]]
+    return [mov] + [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred] if mov else render_val(x.src[0].src[0].arg, x.dtype.scalar())};" for uu in ctx.r[x]]
   else:
-    return [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {render_val(x.src[0].arg, x.dtype)};"]
+    return [mov, f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x]}, {ctx.r[pred] if mov else render_val(x.src[0].arg, x.dtype)};"]
 
 def render_store(ctx, x, bidx, var, pred=None):
   mem_type = 'shared' if bidx.op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in bidx.parents) else 'global'
@@ -98,12 +98,14 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [data{x.arg}+0];"]),
   (UPat((BinaryOps.CMPLT, BinaryOps.CMPNE), name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.src[0].dtype, ctx.types[x.src[0].dtype])]),
   (UPat(GroupOp.ALU, name="x"), lambda ctx, x: [ctx.code_for_op[x.op](ctx.r[x], *[ctx.r[v] for v in x.src], x.dtype, ctx.types[x.dtype])]),
+  (UPat(Ops.BITCAST, name="x", src=(UPat.var("a")), allow_any_len=True), lambda ctx, x, a: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", src=(UPat(dtype=dtypes.bool, name="a"))), lambda ctx, x, a: [f"selp.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(1, x.dtype)}, {render_val(0, x.dtype)}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
   (UPat(Ops.CAST, name="x"), lambda ctx, x: [f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var("alt"), UPat(GroupOp.ALU, name="gate"))), lambda: print("Matchh")),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), render_load),
-  (UPat(Ops.DEFINE_ACC, name="x"), render_acc),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: render_acc(ctx, x, pred, f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype.scalar())}, 0;")),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat.var("pred"), ), allow_any_len=True), render_acc),
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"]),
   (UPat(Ops.ENDRANGE, name="x", src=(UPat.var("src0"),)), lambda ctx, x, src0: [
@@ -170,6 +172,8 @@ class PTXRenderer(Renderer):
 
     self.uops = uops
     for u in uops:
+      print('\n')
+      print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
       if uop is Ops.VECTORIZE:
@@ -188,6 +192,7 @@ class PTXRenderer(Renderer):
       elif uop is Ops.RANGE: ssa("ridx", u)
       elif uop in GroupOp.ALU: ssa("alu", u)
       elif uop is Ops.DEFINE_ACC:
+        r[src[0]] = ssa("const", dtype=self.types[src[0].dtype])
         r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
       elif uop is Ops.SPECIAL: r[u] = "%" + args[0]
       elif uop is Ops.DEFINE_VAR:
@@ -207,6 +212,7 @@ class PTXRenderer(Renderer):
         self.extra[u] = [ssa("wmma", dtype="b32") for vv in src[:2] for i in range(0, len(r[vv]), 2)]
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
       if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
+      print(l)
       kernel.extend(l)
 
       if uop is Ops.ASSIGN: r[u] = r[src[0]]

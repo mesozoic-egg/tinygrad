@@ -41,6 +41,7 @@ def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, gra
   if tinygrad_fxn is None: tinygrad_fxn = torch_fxn
   ts, tst = prepare_test_op(low, high, shps, vals, forward_only)
 
+
   st = time.monotonic()
   out = torch_fxn(*ts)
   torch_fp = time.monotonic() - st
