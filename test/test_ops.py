@@ -26,8 +26,7 @@ def schedule(a: Tensor):
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
-  src = renderer.render("rendered", kernel.uops)
-  return src
+  return renderer.render("rendered", kernel.uops)
 
 if CI:
   import warnings
@@ -36,6 +35,25 @@ if CI:
 FORWARD_ONLY = getenv("FORWARD_ONLY", 0)
 PRINT_TENSORS = getenv("PRINT_TENSORS", 0)
 
+def compare_kernels(k0, k1):
+  for uop in k0.keys():
+    if k0[uop] != k1[uop]:
+      print(uop)
+      print("k0")
+      print(k0[uop])
+      print("k1")
+      print(k1[uop])
+      raise RuntimeError("Comparison failed")
+
+def compare_kernels(k0, k1):
+  for uop in k0.keys():
+    if k0[uop] != k1[uop]:
+      print(uop)
+      print("k0")
+      print(k0[uop])
+      print("k1")
+      print(k1[uop])
+      raise RuntimeError("Comparison failed")
 def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, grad_atol=1e-4, grad_rtol=1e-3,
                    forward_only=False, vals=None, low=-2, high=2):
   if tinygrad_fxn is None: tinygrad_fxn = torch_fxn
@@ -51,20 +69,16 @@ def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, gra
     for t in tst: t.to_(mt)
 
   st = time.monotonic()
-  print(f"tst")
-  print(tst)
   ret = tinygrad_fxn(*tst)
-  print(ret)
   asts = schedule(ret)
-  print(f"{len(asts)=}")
   for ast in asts:
-    print("asst")
-    print(ast)
-    ptx_src = render(ast, ptx_renderer)
-    print(ptx_src)
-    ptx2_src = render(ast, ptx_renderer2)
-    print(ptx2_src)
-    assert ptx_src == ptx2_src
+    ptx_src, k0 = render(ast, ptx_renderer)
+    ptx2_src, k1 = render(ast, ptx_renderer2)
+    compare_kernels(k0, k1)
+    if ptx_src != ptx2_src:
+      print(ptx_src)
+      print(ptx2_src)
+      raise RuntimeError("Code is different")
 
 def prepare_test_op(low, high, shps, vals, forward_only=False):
   if shps is None:
