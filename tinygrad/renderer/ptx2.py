@@ -105,8 +105,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var("alt"), UPat(GroupOp.ALU, name="gate"))), lambda: print("Matchh")),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), render_load),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};"] for uu in ctx.r[x]])),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: render_acc(ctx, x, pred, f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype.scalar())}, 0;")),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: [f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype)}, 0;", f"mov.pred {ctx.r[x]}, {ctx.r[pred]}"]),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: [f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype)}, 0;", f"mov.pred {ctx.r[x]}, {ctx.r[pred]};"]),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST), ), allow_any_len=True), lambda ctx, x, pred: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(pred.arg, x.dtype)};"]),
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"]),
@@ -194,6 +193,8 @@ class PTXRenderer(Renderer):
       elif uop is Ops.RANGE: ssa("ridx", u)
       elif uop in GroupOp.ALU: ssa("alu", u)
       elif uop is Ops.DEFINE_ACC:
+        if dtype in [dtypes.half, dtypes.bool]:
+          r[src[0]] = ssa("const", src[0])
         r[u] = [ssa('acc', u, dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)] if dtype.count > 1 else ssa("acc", u)
       elif uop is Ops.SPECIAL: r[u] = "%" + args[0]
       elif uop is Ops.DEFINE_VAR:
