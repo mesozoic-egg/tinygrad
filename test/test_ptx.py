@@ -20,9 +20,11 @@ ptx_renderer2 = PTXRenderer2("sm_86")
 
 def schedule(a: Tensor):
   scheduled, vars = a.schedule_with_vars() 
+  asts = []
   for si in scheduled:
     if si.ast.op is Ops.SINK:
-      return si.ast
+      asts.append(si.ast)
+  return asts
   
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
@@ -81,10 +83,13 @@ def compare_ptx2(a: UOp):
 
 
 def compare_ptx(a: Tensor):
-  ast = schedule(a)
-  src0 = render(ast, PTXRenderer("sm_86"))
-  src1 = render(ast, ptx_renderer2)
-  assert src0 == src1
+  asts = schedule(a)
+  for ast in asts:
+    src0 = render(ast, PTXRenderer("sm_86"))
+    print(src0)
+    src1 = render(ast, ptx_renderer2)
+    print(src1)
+    assert src0 == src1
 
 def test_addition():
   a = Tensor.empty(4, 4)
@@ -105,6 +110,10 @@ def test_sum_loop():
 
 def test_arange():
   a = Tensor.arange(0, 12)
+  compare_ptx(a)
+
+def test_arange_float():
+  a = Tensor.arange(5.5, 175.5, 2.5)
   compare_ptx(a)
 
 def test_matmul():
@@ -240,3 +249,10 @@ def test_gated_load():
     store = UOp(Ops.STORE, dtypes.void, (glbl0.index(idx), ld))
     sink = UOp(Ops.SINK, dtypes.void, (store,))
     compare_ptx2(sink)
+
+def test_pool():
+  a = Tensor.uniform(32, 2, 111, 28)
+  a.realize()
+  x = Tensor.avg_pool2d(a, kernel_size=(2,2), padding=1)
+  # print(x)
+  compare_ptx(x)
