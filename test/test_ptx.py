@@ -140,6 +140,27 @@ def test_acc_vec():
   ))
   store([const_0, const_64, _range, const_0_0, vec, acc])
 
+def test_acc_vec_half():
+  const_0 = UOp(Ops.CONST, dtypes.int, arg=0, src=())
+  const_64 = UOp(Ops.CONST, dtypes.int, arg=64, src=())
+  _range = UOp(Ops.RANGE, dtypes.int, arg=(1, True), src=(
+    const_0,
+    const_64
+  ))
+  const_0_0 = UOp(Ops.CONST, dtypes.half, arg=0.0, src=())
+  vec = UOp(Ops.VECTORIZE, dtypes.half.vec(4), arg=None, src=(
+    const_0_0,
+    const_0_0,
+    const_0_0,
+    const_0_0,
+  ))
+     
+  acc = UOp(Ops.DEFINE_ACC, dtypes.half.vec(4), arg=(0, ), src=(
+    vec,
+    _range 
+  ))
+  store([const_0, const_64, _range, const_0_0, vec, acc])
+
 def test_acc_bool():
   const_0 = UOp(Ops.CONST, dtypes.int, arg=0, src=())
   const_64 = UOp(Ops.CONST, dtypes.int, arg=64, src=())
