@@ -67,7 +67,9 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
   src0 = render2(uops, ptx_renderer)
+  print(src0)
   src1 = render2(uops, ptx_renderer2)
+  print(src1)
   assert src0 == src1
 
 def compare_ptx2(a: UOp):
@@ -138,6 +140,42 @@ def test_acc_vec():
   ))
   store([const_0, const_64, _range, const_0_0, vec, acc])
 
+def test_acc_bool():
+  const_0 = UOp(Ops.CONST, dtypes.int, arg=0, src=())
+  const_64 = UOp(Ops.CONST, dtypes.int, arg=64, src=())
+  _range = UOp(Ops.RANGE, dtypes.int, arg=(0, True), src=(
+    const_0,
+    const_64
+  ))
+  const_bool = UOp(Ops.CONST, dtypes.bool, arg=False, src=())
+  acc = UOp(Ops.DEFINE_ACC, dtypes.bool, arg=(0,), src=(
+    const_bool,
+    _range
+  ))
+  store([const_0, const_64, _range, const_bool, acc])
+
+def test_acc_bool_vec():
+  const_0 = UOp(Ops.CONST, dtypes.int, arg=0, src=())
+  const_64 = UOp(Ops.CONST, dtypes.int, arg=64, src=())
+  _range = UOp(Ops.RANGE, dtypes.int, arg=(0, True), src=(
+    const_0,
+    const_64
+  ))
+  const_bool = UOp(Ops.CONST, dtypes.bool, arg=False, src=())
+  vec = UOp(Ops.VECTORIZE, dtypes.bool.vec(4), arg=None, src=(
+    const_bool,
+    const_bool,
+    const_bool,
+    const_bool,
+  ))
+  acc = UOp(Ops.DEFINE_ACC, dtypes.bool, arg=(0,), src=(
+    vec,
+    _range
+  ))
+  store([const_0, const_64, _range, const_bool, acc])
+
+  
+  
 def test_var_in_special():
   vi = Variable("i", 1, 10).bind(9)
   a = Tensor.empty(vi, 8)
