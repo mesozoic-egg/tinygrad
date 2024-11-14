@@ -94,7 +94,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.BITCAST, name="x", src=(UPat.var("a")), allow_any_len=True), lambda ctx, x, a: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", src=(UPat(dtype=dtypes.bool, name="a"))), lambda ctx, x, a: [f"selp.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(1, x.dtype)}, {render_val(0, x.dtype)}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
-  (UPat(Ops.CAST, name="x"), lambda ctx, x: [f"cvt.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
+  (UPat(Ops.CAST, name="x", src=(UPat.var("a"))), lambda ctx, x, a: [f"cvt{'.rzi' if dtypes.is_int(x.dtype) and dtypes.is_float(a.dtype) else '.rn' if dtypes.is_float(x.dtype) and (x.dtype.itemsize < a.dtype.itemsize or dtypes.is_int(a.dtype) or a.dtype == dtypes.bool) else ''}.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var("alt"), UPat(GroupOp.ALU, name="gate"))), lambda: print("Matchh")),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), render_load),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
@@ -168,6 +168,8 @@ class PTXRenderer(Renderer):
 
     self.uops = uops
     for u in uops:
+      print('\n')
+      print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
       if uop is Ops.VECTORIZE:
@@ -208,6 +210,7 @@ class PTXRenderer(Renderer):
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
       if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
       kernel.extend(l)
+      print(*l)
 
       if uop is Ops.ASSIGN: r[u] = r[src[0]]
       elif uop is Ops.SPECIAL: kernel = [f".reg .u32 %{args[0]};"] + kernel
