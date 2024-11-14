@@ -120,8 +120,10 @@ class PTXRenderer(Renderer):
     kernel:List[str] = []
     bufs = []
 
+    kernel_uop = defaultdict(list) 
+    current_uop = None
     def kk(*s: str):
-      print(*s)
+      kernel_uop[current_uop].extend(s)
       kernel.append("\n".join(s))
 
     c: DefaultDict[str, int] = defaultdict(int)
@@ -147,8 +149,7 @@ class PTXRenderer(Renderer):
       return ret
 
     for u in uops:
-      print('\n')
-      print(u)
+      current_uop = u
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
       if uop is Ops.IF:
         pred_reg = _cast(r[src[0]], dtypes.bool, src[0].dtype, u=u, pred=True)
@@ -235,5 +236,5 @@ class PTXRenderer(Renderer):
             {{{", ".join(r[u])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(r[src[2]])}}};')
         else: raise NotImplementedError(f"no code for {uop}")
 
-    return self.render_kernel(kernel, name, bufs, c.items())
+    return self.render_kernel(kernel, name, bufs, c.items()), kernel_uop
 

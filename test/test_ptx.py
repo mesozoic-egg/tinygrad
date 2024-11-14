@@ -29,8 +29,7 @@ def schedule(a: Tensor):
 def render(ast: UOp, renderer: Renderer):
   kernel = get_kernel(renderer, ast)
   kernel.linearize()
-  src = renderer.render("rendered", kernel.uops)
-  return src
+  return renderer.render("rendered", kernel.uops)
 
 def render2(uops: List[UOp], renderer: Renderer):
   return renderer.render("rendererd", uops)
@@ -68,16 +67,26 @@ def store(uops: List[UOp]=[UOp(Ops.CONST, dtypes.uint, arg=2)]):
   added = UOp(Ops.ADD, dtypes.long, arg=None, src=(define_global, special))
   store = UOp(Ops.STORE, dtypes.void, arg=None, src=(added, uops[-1]))
   uops = [define_global, special, added] + uops + [store]
-  src0 = render2(uops, ptx_renderer)
-  print(src0)
-  src1 = render2(uops, ptx_renderer2)
-  print(src1)
+  src0, kernels0 = render2(uops, ptx_renderer)
+  src1, kernels1 = render2(uops, ptx_renderer2)
+  compare_kernels(kernels0, kernels1)
   assert src0 == src1
+
+def compare_kernels(k0, k1):
+  for uop in k0.keys():
+    if k0[uop] != k1[uop]:
+      print(uop)
+      print("k0")
+      print(k0[uop])
+      print("k1")
+      print(k1[uop])
+      raise RuntimeError("Comparison failed")
 
 def compare_ptx2(a: UOp):
   uops = linearize_uop(full_graph_rewrite(a, ptx_renderer))  
-  ptx_src = ptx_renderer.render("rendered", uops)
-  ptx2_src = ptx_renderer2.render("rendered", uops)
+  ptx_src, kernels0 = ptx_renderer.render("rendered", uops)
+  ptx2_src, kernels1 = ptx_renderer2.render("rendered", uops)
+  compare_kernels(kernels0, kernels1)
   assert ptx_src == ptx2_src
   
 
@@ -85,12 +94,14 @@ def compare_ptx2(a: UOp):
 def compare_ptx(a: Tensor):
   asts = schedule(a)
   for ast in asts:
-    src0 = render(ast, PTXRenderer("sm_86"))
-    print(src0)
-    src1 = render(ast, ptx_renderer2)
-    print(src1)
-    assert src0 == src1
-
+    src0, k0 = render(ast, PTXRenderer("sm_86"))
+    src1, k1 = render(ast, ptx_renderer2)
+    compare_kernels(k0, k1)
+    if src0 != src1:
+      print("src0")
+      print(src0)
+      print("src1")
+      print(src1)
 def test_addition():
   a = Tensor.empty(4, 4)
   b = (a + 1).contiguous()

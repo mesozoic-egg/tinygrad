@@ -62,12 +62,14 @@ def render_store(ctx, x, bidx, var, pred=None):
   else:
     return [f"{gate}st.{mem_type}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
-def render_load(ctx, x, loc, gate=None, alt=None):
+def render_load(ctx, x, loc):
   mem_type = 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
   if x.dtype.count > 1:
     return [f" ld.{mem_type}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];"]
   else:
     return [f"ld.{mem_type}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"]
+
+def mem_type(x: UOp): return 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
 
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
@@ -95,6 +97,14 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.CAST, name="x", src=(UPat(dtype=dtypes.bool, name="a"))), lambda ctx, x, a: [f"selp.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(1, x.dtype)}, {render_val(0, x.dtype)}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
   (UPat(Ops.CAST, name="x", src=(UPat.var("a"))), lambda ctx, x, a: [f"cvt{'.rzi' if dtypes.is_int(x.dtype) and dtypes.is_float(a.dtype) else '.rn' if dtypes.is_float(x.dtype) and (x.dtype.itemsize < a.dtype.itemsize or dtypes.is_int(a.dtype) or a.dtype == dtypes.bool) else ''}.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
+  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat(name='dest', op=Ops.VECTORIZE), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, dest, gate: flatten([
+    [f"mov.{ctx.mem_types[x.dtype.scalar()]} {v}, {render_val(0, x.dtype.scalar())};" for v in ctx.r[x]],
+    [f"@{ctx.r[gate]} ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];"]
+  ])),
+  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var('alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: [
+    f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
+    f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
+  ]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), render_load),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.half),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
@@ -166,9 +176,8 @@ class PTXRenderer(Renderer):
       return f"%{prefix}{c[prefix]-1}"
 
     self.uops = uops
+    kernel_uop = defaultdict(list)
     for u in uops:
-      print('\n')
-      print(u)
       uop,dtype,src,args = u.op,u.dtype,u.src,u.arg
 
       if uop is Ops.VECTORIZE:
@@ -209,9 +218,9 @@ class PTXRenderer(Renderer):
         r[u] = [ssa("wmma", dtype=self.types[dtype.scalar()]) for _ in range(dtype.count)]
       if (l:=self.string_rewrite.rewrite(u, ctx=self)) is None: raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
       kernel.extend(l)
-      print(*l)
+      kernel_uop[u].extend(l)
 
       if uop is Ops.ASSIGN: r[u] = r[src[0]]
       elif uop is Ops.SPECIAL: kernel = [f".reg .u32 %{args[0]};"] + kernel
-    return self.render_kernel(kernel, name, bufs, c.items())
+    return self.render_kernel(kernel, name, bufs, c.items()), kernel_uop
 

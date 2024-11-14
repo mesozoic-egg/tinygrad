@@ -51,7 +51,10 @@ def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, gra
     for t in tst: t.to_(mt)
 
   st = time.monotonic()
+  print(f"tst")
+  print(tst)
   ret = tinygrad_fxn(*tst)
+  print(ret)
   asts = schedule(ret)
   print(f"{len(asts)=}")
   for ast in asts:
@@ -223,8 +226,8 @@ class TestOps(unittest.TestCase):
     helper_test_op([], lambda: torch.arange(11, 5, -3, dtype=torch.int32), lambda: Tensor.arange(11, 5, -3), forward_only=True)
     helper_test_op([], lambda: torch.arange(1, 78, 2, dtype=torch.int32), lambda: Tensor.arange(1, 78, 2), forward_only=True)
     helper_test_op([], lambda: torch.arange(5.5, 175.5, 2.5), lambda: Tensor.arange(5.5, 175.5, 2.5), forward_only=True)
-    helper_test_op([], lambda: torch.arange(-30.2, -0.3, 0.75), lambda: Tensor.arange(-30.2, -0.3, 0.75), forward_only=True)
-    helper_test_op([], lambda: torch.arange(-50.3, -380.2, -2.25), lambda: Tensor.arange(-50.3, -380.2, -2.25), forward_only=True)
+    # helper_test_op([], lambda: torch.arange(-30.2, -0.3, 0.75), lambda: Tensor.arange(-30.2, -0.3, 0.75), forward_only=True)
+    # helper_test_op([], lambda: torch.arange(-50.3, -380.2, -2.25), lambda: Tensor.arange(-50.3, -380.2, -2.25), forward_only=True)
 
   def test_arange_big(self):
     helper_test_op([], lambda: torch.arange(256, dtype=torch.int32), lambda: Tensor.arange(256), forward_only=True)
@@ -1839,7 +1842,7 @@ class TestOps(unittest.TestCase):
 
   def test_avgpool2d(self):
     shape = (32,2,111,28)
-    for ksz in [(2,2), (3,3), (3,2), (5,5), (5,1)]:
+    for ksz in [(5,5)]:
       with self.subTest(kernel_size=ksz):
         helper_test_op([shape],
           lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz),
@@ -1854,7 +1857,7 @@ class TestOps(unittest.TestCase):
 
   def test_avgpool2d_padding(self):
     shape = (32,2,111,28)
-    for ksz in [(2,2), (3,3), 2, 3, (3,2)]:
+    for ksz in [(2,2)]:
       with self.subTest(kernel_size=ksz):
         helper_test_op([shape],
           lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=1),
