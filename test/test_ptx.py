@@ -168,7 +168,7 @@ def test_acc_bool_vec():
     const_bool,
     const_bool,
   ))
-  acc = UOp(Ops.DEFINE_ACC, dtypes.bool, arg=(0,), src=(
+  acc = UOp(Ops.DEFINE_ACC, dtypes.bool.vec(4), arg=(0, False), src=(
     vec,
     _range
   ))
