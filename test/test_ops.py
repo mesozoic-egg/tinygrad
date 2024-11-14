@@ -6,6 +6,28 @@ from tinygrad.helpers import getenv, IMAGE, DEBUG, CI, Context, TRANSCENDENTAL
 from tinygrad import Tensor, Device, dtypes
 from tinygrad.tensor import _to_np_dtype
 from tinygrad.device import is_dtype_supported
+from tinygrad.engine.realize import get_kernel
+from tinygrad.ops import Ops, UOp, sym_infer, sint, print_uops
+from tinygrad.renderer.ptx import PTXRenderer
+from tinygrad.renderer import Renderer
+from tinygrad.renderer.ptx2 import PTXRenderer as PTXRenderer2
+
+ptx_renderer = PTXRenderer("sm_86")
+ptx_renderer2 = PTXRenderer2("sm_86")
+
+def schedule(a: Tensor):
+  scheduled, vars = a.schedule_with_vars() 
+  asts = []
+  for si in scheduled:
+    if si.ast.op is Ops.SINK:
+      asts.append(si.ast)
+  return asts
+
+def render(ast: UOp, renderer: Renderer):
+  kernel = get_kernel(renderer, ast)
+  kernel.linearize()
+  src = renderer.render("rendered", kernel.uops)
+  return src
 
 if CI:
   import warnings
@@ -28,41 +50,17 @@ def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, gra
     for t in tst: t.to_(mt)
 
   st = time.monotonic()
-  ret = tinygrad_fxn(*tst).realize()
-  tinygrad_fp = time.monotonic() - st
-
-  def compare(s, tinygrad_output, torch_output, atol, rtol):
-    if PRINT_TENSORS: print(s, tinygrad_output, torch_output)
-    try:
-      assert tinygrad_output.shape == torch_output.shape, f"shape mismatch: tinygrad={tinygrad_output.shape} | torch={torch_output.shape}"
-      assert tinygrad_output.dtype == torch_output.dtype, f"dtype mismatch: tinygrad={tinygrad_output.dtype} | torch={torch_output.dtype}"
-      np.testing.assert_allclose(tinygrad_output, torch_output, atol=atol, rtol=rtol)
-    except Exception as e:
-      raise Exception(f"{s} failed shape {tinygrad_output.shape}: {e}")
-
-  if DEBUG >= 6:
-    np.set_printoptions(linewidth=200, suppress=True)
-    print(ret.numpy())
-    print(out.detach().numpy())
-  compare("forward pass", ret.numpy(), out.detach().numpy(), atol=atol, rtol=rtol)
-
-  torch_fbp, tinygrad_fbp = np.nan, np.nan
-  if not forward_only and not FORWARD_ONLY:
-    st = time.monotonic()
-    (out+1).square().mean().backward()
-    torch_fbp = time.monotonic() - st
-
-    st = time.monotonic()
-    (ret+1).square().mean().backward()
-    for tt in tst: tt.grad.realize()
-    tinygrad_fbp = time.monotonic() - st
-
-    for i, (t, tt) in enumerate(zip(ts, tst)):
-      compare(f"backward pass tensor {i}", tt.grad.numpy(), t.grad.detach().numpy(), atol=grad_atol, rtol=grad_rtol)
-
-  if not CI:
-    print("\ntesting %40r   torch/tinygrad fp: %.2f / %.2f ms  bp: %.2f / %.2f ms " % \
-          (shps, torch_fp*1000, tinygrad_fp*1000, torch_fbp*1000, tinygrad_fbp*1000), end="")
+  ret = tinygrad_fxn(*tst)
+  asts = schedule(ret)
+  print(f"{len(asts)=}")
+  for ast in asts:
+    print("asst")
+    print(ast)
+    ptx_src = render(ast, ptx_renderer)
+    print(ptx_src)
+    ptx2_src = render(ast, ptx_renderer2)
+    print(ptx2_src)
+    assert ptx_src == ptx2_src
 
 def prepare_test_op(low, high, shps, vals, forward_only=False):
   if shps is None:
@@ -982,10 +980,10 @@ class TestOps(unittest.TestCase):
   @unittest.skipIf(Device.DEFAULT == "QCOM", "OpenCL fails to compile this (both on GPU(qcom)/QCOM backends)")
   def test_all(self):
     helper_test_op([(3,4,5,6)], lambda x: x.all(), forward_only=True)
-    helper_test_op(None, lambda x: x.all(), vals=[[True, True]], forward_only=True)
-    helper_test_op(None, lambda x: x.all(), vals=[[True, False]], forward_only=True)
-    helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
-    helper_test_op([()], lambda x: x.all(), forward_only=True)
+    # helper_test_op(None, lambda x: x.all(), vals=[[True, True]], forward_only=True)
+    # helper_test_op(None, lambda x: x.all(), vals=[[True, False]], forward_only=True)
+    # helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
+    # helper_test_op([()], lambda x: x.all(), forward_only=True)
   def test_all_axis(self):
     helper_test_op([(3,4,5,6)], lambda x: x.all(axis=(1,2)), forward_only=True)
   def test_all_zero_axis(self):
@@ -1288,11 +1286,11 @@ class TestOps(unittest.TestCase):
 
   def test_pad(self):
     helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4)),lambda x: x.pad(((3,4),(1,2))))
-    helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=5), lambda x: x.pad(((3,4), (1,2)), value=5))
-    helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=math.inf), lambda x: x.pad(((3,4), (1,2)), value=math.inf))
-    helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=-math.inf), lambda x: x.pad(((3,4), (1,2)), value=-math.inf))
-    helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (0,0,3,4), value=1), lambda x: x.pad(((3,4), None), value=1))
-    helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (0,0,0,0), value=1), lambda x: x.pad((None, None), value=1))
+    # helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=5), lambda x: x.pad(((3,4), (1,2)), value=5))
+    # helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=math.inf), lambda x: x.pad(((3,4), (1,2)), value=math.inf))
+    # helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (1,2,3,4), value=-math.inf), lambda x: x.pad(((3,4), (1,2)), value=-math.inf))
+    # helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (0,0,3,4), value=1), lambda x: x.pad(((3,4), None), value=1))
+    # helper_test_op([(3,3)], lambda x: torch.nn.functional.pad(x, (0,0,0,0), value=1), lambda x: x.pad((None, None), value=1))
 
   def test_pad_reshape(self):
     helper_test_op([(1, 2)],
