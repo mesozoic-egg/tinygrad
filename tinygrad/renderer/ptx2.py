@@ -55,6 +55,7 @@ ptx_matcher = PatternMatcher([
 ])
 
 def mem_type(x: UOp): return 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(_x.op is Ops.DEFINE_LOCAL for _x in x.src[0].parents) else 'global'
+  
 def render_store(ctx, x, bidx, var, pred=None):
   gate = f"@{ctx.r[pred]} " if pred is not None and pred.op is not Ops.IF else ""
   if var.dtype.count > 1:
@@ -88,14 +89,17 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.CAST, name="x", src=(UPat(dtype=dtypes.bool, name="a"))), lambda ctx, x, a: [f"selp.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(1, x.dtype)}, {render_val(0, x.dtype)}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
   (UPat(Ops.CAST, name="x", src=(UPat.var("a"))), lambda ctx, x, a: [f"cvt{'.rzi' if dtypes.is_int(x.dtype) and dtypes.is_float(a.dtype) else '.rn' if dtypes.is_float(x.dtype) and (x.dtype.itemsize < a.dtype.itemsize or dtypes.is_int(a.dtype) or a.dtype == dtypes.bool) else ''}.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
-  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat(name='dest', op=Ops.VECTORIZE), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, dest, gate: flatten([
+  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat(name='alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: flatten([
     [f"mov.{ctx.mem_types[x.dtype.scalar()]} {v}, {render_val(0, x.dtype.scalar())};" for v in ctx.r[x]],
     [f"@{ctx.r[gate]} ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];"]
-  ])),
-  (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var('alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: [
+  ]) if alt.dtype.count > 1 else [
     f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
     f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
   ]),
+  # (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var('alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: [
+  #   f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
+  #   f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
+  # ]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), lambda ctx, x, loc: [
     f" ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];" if x.dtype.count > 1 else \
     f"ld.{mem_type(x)}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"
