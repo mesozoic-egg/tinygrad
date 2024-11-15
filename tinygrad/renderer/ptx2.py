@@ -71,8 +71,8 @@ def render_wmma(ctx, x):
     for i in range(0, len(ctx.r[vv]), 2):
       yield f"mov.b32 {ctx.extra[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};"
       _i += 1 
-  yield f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
-            {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};'
+  yield f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32{" "*12}' +\
+  f'{{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};'
 
 def modifier(a: DType, b: DType): return '.rzi' if dtypes.is_int(a) and dtypes.is_float(b) else '.rn' if dtypes.is_float(a) and (a.itemsize < b.itemsize or dtypes.is_int(b) or b == dtypes.bool) else ''
   
