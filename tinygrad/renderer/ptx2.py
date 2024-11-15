@@ -75,7 +75,8 @@ def render_wmma(ctx, x):
             {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};'
   
 string_rewrite = PatternMatcher([
-  (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
+  (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;"]),
+  (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
   (UPat(Ops.STORE, name="x", src=(UPat.var('bidx'), UPat.var("var"), UPat.var("pred")), allow_any_len=True), render_store),
   (UPat(Ops.SPECIAL, name="x"), lambda ctx,x: [f"mov.u32 %{x.arg[0]}, %{'ctaid' if x.arg[0][0] == 'g' else 'tid'}.{chr(120+int(x.arg[0][-1]))};"]), 
   (UPat(Ops.DEFINE_GLOBAL, name="x"), lambda ctx, x: [f"ld.param.{ctx.types[dtypes.ulong]} {ctx.r[x]}, [data{x.arg}+0];"]),
