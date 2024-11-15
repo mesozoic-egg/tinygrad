@@ -124,10 +124,10 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_LOCAL, name="x"),
    lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
   (UPat(Ops.IF, name="x"), lambda ctx, x: f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};"),
-  (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
+  (UPat(Ops.ENDIF, name="x"), lambda ctx, x: f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"),
   (UPat(Ops.WMMA, name="x"), lambda ctx, x: list(render_wmma(ctx, x))),
-  (UPat(Ops.BARRIER, name="x"), lambda ctx, x: [ctx.barrier]),
-  (UPat(Ops.DEFINE_VAR, name="x"), lambda ctx, x: [f"ld.param.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{x.arg[0]}+0];"]),
+  (UPat(Ops.BARRIER, name="x"), lambda ctx, x: ctx.barrier),
+  (UPat(Ops.DEFINE_VAR, name="x"), lambda ctx, x: f"ld.param.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{x.arg[0]}+0];"),
 ])
 
 class PTXRenderer(Renderer):
