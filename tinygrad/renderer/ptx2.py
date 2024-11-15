@@ -101,10 +101,10 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True),
    lambda ctx, x, loc: f" ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];" \
      if x.dtype.count > 1 else f"ld.{mem_type(x)}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True),
-   lambda ctx, x, pred_vec: flatten([
-    [f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;",
-     f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True),
+   lambda ctx, x, pred: flatten([
+    [f"setp.ne.s16 {ctx.r[pred][i]}, {render_val(pred.src[0].arg, x.dtype.scalar())}, 0;",
+     f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred][i]};"] for i, uu in enumerate(ctx.r[x])])),
   (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.VECTORIZE, dtype=dtypes.half),), allow_any_len=True),
    lambda ctx, x, pred: flatten([[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[pred][i]}, {render_val(pred.src[0].arg, x.dtype.scalar())};",
       f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred][i]};"] for i, uu in enumerate(ctx.r[x])])),
