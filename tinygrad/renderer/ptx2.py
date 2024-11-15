@@ -66,15 +66,13 @@ def render_wmma(ctx, x):
   n_operands = tuple(prod(sz for _, sz in upc)*dtype_in.itemsize//4 for upc in upcast_axes[:2])
   wmma = ctx.extra[x]
   dt_map = { dtypes.half: "f16" }
-  ret = []
   _i = 0
   for vv in x.src[:2]:
     for i in range(0, len(ctx.r[vv]), 2):
-      ret.append(f"mov.b32 {ctx.extra[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};")
+      yield f"mov.b32 {ctx.extra[x][_i]}, {{{', '.join(ctx.r[vv][i:i+2])}}};"
       _i += 1 
-  ret.append(f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
-            {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};')
-  return ret
+  yield f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
+            {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};'
   
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x"), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;" if x.dtype == dtypes.bool else f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(x.arg, x.dtype)};"]),
@@ -121,7 +119,7 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_LOCAL, name="x"), lambda ctx, x: [f".shared .align 4 .b8 {x.arg[0]}[{x.arg[1]*x.dtype.itemsize}];", f"mov.u64 {ctx.r[x]}, {x.arg[0]}[0];"]),
   (UPat(Ops.IF, name="x"), lambda ctx, x: [f"@!{ctx.r[x.src[0]]} bra IF_{ctx.r[x.src[0]][1:]}_{ctx.uops.index(x)};"]),
   (UPat(Ops.ENDIF, name="x"), lambda ctx, x: [f"IF_{ctx.r[x.src[0].src[0]][1:]}_{ctx.uops.index(x.src[0])}:"]),
-  (UPat(Ops.WMMA, name="x"), render_wmma),
+  (UPat(Ops.WMMA, name="x"), lambda ctx, x: list(render_wmma(ctx, x))),
   (UPat(Ops.BARRIER, name="x"), lambda ctx, x: [ctx.barrier]),
   (UPat(Ops.DEFINE_VAR, name="x"), lambda ctx, x: [f"ld.param.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{x.arg[0]}+0];"]),
 ])
