@@ -73,6 +73,8 @@ def render_wmma(ctx, x):
       _i += 1 
   yield f'mma.sync.aligned.m{M}n{N}k{K}.row.col.f32.{dt_map[dtype_in]}.{dt_map[dtype_in]}.f32\
             {{{", ".join(ctx.r[x])}}}, {{{", ".join(wmma[:n_operands[0]])}}}, {{{", ".join(wmma[-n_operands[1]:])}}}, {{{", ".join(ctx.r[x.src[2]])}}};'
+
+def modifier(a: DType, b: DType): return '.rzi' if dtypes.is_int(a) and dtypes.is_float(b) else '.rn' if dtypes.is_float(a) and (a.itemsize < b.itemsize or dtypes.is_int(b) or b == dtypes.bool) else ''
   
 string_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.s16 {ctx.r[x]}, {render_val(x.arg, x.dtype)}, 0;"]),
@@ -86,7 +88,8 @@ string_rewrite = PatternMatcher([
   (UPat(Ops.BITCAST, name="x", src=(UPat.var("a")), allow_any_len=True), lambda ctx, x, a: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", src=(UPat(dtype=dtypes.bool, name="a"))), lambda ctx, x, a: [f"selp.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(1, x.dtype)}, {render_val(0, x.dtype)}, {ctx.r[a]};"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"setp.ne.b{ctx.types[x.src[0].dtype][1:]} {ctx.r[x]}, {ctx.r[x.src[0]]}, {render_val(0, x.src[0].dtype)};"]),
-  (UPat(Ops.CAST, name="x", src=(UPat.var("a"))), lambda ctx, x, a: [f"cvt{'.rzi' if dtypes.is_int(x.dtype) and dtypes.is_float(a.dtype) else '.rn' if dtypes.is_float(x.dtype) and (x.dtype.itemsize < a.dtype.itemsize or dtypes.is_int(a.dtype) or a.dtype == dtypes.bool) else ''}.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
+  (UPat(Ops.CAST, name="x", src=(UPat.var("a"))), lambda ctx, x, a: [
+    f"cvt{modifier(x.dtype, a.dtype)}.{ctx.types[x.dtype]}.{ctx.types[x.src[0].dtype]} {ctx.r[x]}, {ctx.r[x.src[0]]};"]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat(name='alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: flatten([
     [f"mov.{ctx.mem_types[x.dtype.scalar()]} {v}, {render_val(0, x.dtype.scalar())};" for v in ctx.r[x]],
     [f"@{ctx.r[gate]} ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];"]
