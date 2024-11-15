@@ -58,10 +58,8 @@ def mem_type(x: UOp): return 'shared' if x.src[0].op is Ops.DEFINE_LOCAL or any(
   
 def render_store(ctx, x, bidx, var, pred=None):
   gate = f"@{ctx.r[pred]} " if pred is not None and pred.op is not Ops.IF else ""
-  if var.dtype.count > 1:
-    return [f"{gate}st.{mem_type(bidx)}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};"]
-  else:
-    return [f"{gate}st.{mem_type(bidx)}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
+  return [f"{gate}st.{mem_type(bidx)}.v{var.dtype.count}.{ctx.mem_types[var.dtype.scalar()]} [{ctx.r[bidx]}+0], {{{', '.join(ctx.r[var])}}};"] \
+    if var.dtype.count > 1 else [f"{gate}st.{mem_type(bidx)}.{ctx.mem_types[var.dtype]} [{ctx.r[bidx]}+0], {ctx.r[var]};"]
 
 def render_wmma(ctx, x):
   _, (N, M, K), dtype_in, _, _, _, upcast_axes, _ = x.arg
@@ -96,19 +94,24 @@ string_rewrite = PatternMatcher([
     f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
     f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
   ]),
-  # (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'), UPat.var('alt'), UPat(name="gate", op=GroupOp.ALU))), lambda ctx, x, loc, alt, gate: [
-  #   f"@{ctx.r[gate]} ld.{mem_type(x)}.{ctx.mem_types[x.dtype.scalar()]} {ctx.r[x]}, [{ctx.r[loc]}+0];",
-  #   f"@!{ctx.r[gate]} mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[x]}, {ctx.r[alt]};" 
-  # ]),
   (UPat(Ops.LOAD, name="x", src=(UPat.var('loc'),), allow_any_len=True), lambda ctx, x, loc: [
     f" ld.{mem_type(x)}.v{x.dtype.count}.{ctx.mem_types[x.dtype.scalar()]} {{{', '.join(ctx.r[x])}}}, [{ctx.r[loc]}+0];" if x.dtype.count > 1 else \
     f"ld.{mem_type(x)}.{ctx.mem_types[x.dtype]} {ctx.r[x]}, [{ctx.r[loc]}+0];"
   ]),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.half),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};", f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])])),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE),), allow_any_len=True), lambda ctx, x, pred_vec: [f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};" for i, uu in enumerate(ctx.r[x])]),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: [f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype)}, 0;", f"mov.pred {ctx.r[x]}, {ctx.r[pred]};"]),
-  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST), ), allow_any_len=True), lambda ctx, x, pred: [f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(pred.arg, x.dtype)};"]),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.bool),), allow_any_len=True), lambda ctx, x, pred_vec: flatten([
+    [f"setp.ne.s16 {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())}, 0;",
+     f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])
+  ])),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE, dtype=dtypes.half),), allow_any_len=True), lambda ctx, x, pred_vec: flatten(
+    [[f"mov.b{ctx.types[x.dtype.scalar()][1:]} {ctx.r[pred_vec][i]}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};",
+      f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {ctx.r[pred_vec][i]};"] for i, uu in enumerate(ctx.r[x])
+  ])),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred_vec", op=Ops.VECTORIZE),), allow_any_len=True), lambda ctx, x, pred_vec: [
+    f"mov.b{ctx.types[x.dtype.scalar()][1:]} {uu}, {render_val(pred_vec.src[0].arg, x.dtype.scalar())};" for i, uu in enumerate(ctx.r[x])]),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST, dtype=dtypes.bool), ), allow_any_len=True), lambda ctx, x, pred: [
+    f"setp.ne.s16 {ctx.r[pred]}, {render_val(pred.arg, pred.dtype)}, 0;", f"mov.pred {ctx.r[x]}, {ctx.r[pred]};"]),
+  (UPat(Ops.DEFINE_ACC, name="x", src=(UPat(name="pred", op=Ops.CONST), ), allow_any_len=True), lambda ctx, x, pred: [
+    f"mov.b{ctx.types[x.dtype][1:]} {ctx.r[x]}, {render_val(pred.arg, x.dtype)};"]),
   (UPat(Ops.RANGE, name="x"), lambda ctx, x: [f"mov.u32 {ctx.r[x]}, {ctx.r[x.src[0]]};", "LOOP_" + f"{ctx.r[x][1:]}:"]),
   (UPat(Ops.ASSIGN, name="x"), lambda ctx, x: [f"mov.{f'b{ctx.types[x.dtype][1:]}' if x.dtype != dtypes.bool else 'pred'} {ctx.r[x.src[0]]}, {ctx.r[x.src[1]]};"]),
   (UPat(Ops.ENDRANGE, name="x", src=(UPat.var("src0"),)), lambda ctx, x, src0: [
