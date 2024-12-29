@@ -1,6 +1,6 @@
 # thanks to https://github.com/openai/whisper for a good chunk of MIT licensed code
 
-import sys, base64, multiprocessing, itertools, collections
+import sys, base64, multiprocessing, itertools, collections, zlib
 from typing import Optional, Union, Literal, List
 
 from tinygrad import Tensor, TinyJit, Variable, nn
@@ -236,6 +236,10 @@ def load_file_waveform(filename):
 def transcribe_file(model, enc, filename):
   return transcribe_waveform(model, enc, [load_file_waveform(filename)])
 
+def compression_ratio(text) -> float:
+    text_bytes = text.encode("utf-8")
+    return len(text_bytes) / len(zlib.compress(text_bytes))
+
 def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   """
   Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
@@ -281,14 +285,20 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
-    inferred, sum_probs = inferloop(np.tile(ctx, (5, 1)), encoded_audio, 0.2)
-    candidate_idx = sum_probs.argmax().tolist()
-    selected = inferred[candidate_idx]
+    to_decode = np.tile(ctx, (5, 1))
+    for t in [0, 0.2, 0.4, 0.6]:
+      inferred, sum_probs = inferloop(to_decode, encoded_audio, t)
+      candidate_idx = sum_probs.argmax().tolist()
+      selected = inferred[candidate_idx]
+      tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
+      text = enc.decode(tokens)
+      if compression_ratio(text) < 2.4:
+        print(f"{text}")
+        transcriptions.append(text)
+        break
+      print(f"Too repetitive, trying higher temp: \033[31m{text}\033[0m")
+      
 
-    tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
-    text = enc.decode(tokens)
-    print(f"{text}")
-    transcriptions.append(text)
     ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
 
   return " ".join(transcriptions)
