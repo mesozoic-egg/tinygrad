@@ -292,11 +292,11 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
       selected = inferred[candidate_idx]
       tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
       text = enc.decode(tokens)
-      if compression_ratio(text) < 2.4:
-        print(f"{text}")
+      if compression_ratio(text) < 2.4: # this threshold is taken from openai's implementation
+        print(f"\n{curr_frame=} {text}")
         transcriptions.append(text)
         break
-      print(f"Too repetitive, trying higher temp: \033[31m{text}\033[0m")
+      print(f"\n{curr_frame=} Too repetitive, trying higher temp: \033[31m{text}\033[0m")
       
 
     ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
