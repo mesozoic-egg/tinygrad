@@ -245,15 +245,24 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
-  def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
+  def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int):
     pos, next_tokens = 0, ctx
+    sum_probs = Tensor.zeros(ctx.shape[0])
     for i in range((nsample-len(start_tokens))*2):
-      next_tokens = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].argmax(axis=-1).numpy().astype(np.int32).reshape(-1, 1)
+      logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1]
+      if temperature == 0:
+        next_tokens = logits.argmax(axis=-1)
+      else:
+        scaled = (logits / temperature).softmax(axis=-1)
+        next_tokens = scaled.multinomial(1)
+        probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
+        sum_probs += probs
+      next_tokens = next_tokens.numpy().astype(np.int32).reshape(-1, 1)
       next_tokens[ctx[:, -1] == eot] = eot
       ctx = np.concatenate((ctx, next_tokens), axis=1)
       pos = ctx.shape[-1] - 1
       if (next_tokens == eot).all(): break
-    return ctx
+    return ctx, sum_probs
 
   def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
@@ -272,12 +281,14 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
-    inferred = inferloop(np.array(ctx).reshape((1, -1)), encoded_audio)
-    selected = inferred[0]
+    inferred, sum_probs = inferloop(np.array(ctx).reshape((1, -1)), encoded_audio, 0.2)
+    candidate_idx = sum_probs.argmax().tolist()
+    selected = inferred[candidate_idx]
 
     tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
-    print(f"{enc.decode(tokens)}")
-    transcriptions.append(tokens)
+    text = enc.decode(tokens)
+    print(f"{text}")
+    transcriptions.append(text)
     ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
 
   return " ".join(transcriptions)
