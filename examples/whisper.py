@@ -276,7 +276,10 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
     else: ctx = [inferloop((np.array([c]*model.batch_size)), encoded_audio)[i] for i,c in enumerate(ctx)]
 
     for i, (res, arr) in enumerate(zip(transcriptions, ctx)):
-      if curr_frame*HOP_LENGTH <= len(waveforms[i]):res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
+      if curr_frame*HOP_LENGTH <= len(waveforms[i]):
+        _res = arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None]
+        print(f"{enc.decode(_res)}")
+        res.extend(_res)
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
