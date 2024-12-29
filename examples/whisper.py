@@ -275,13 +275,13 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
 
   eot = enc._special_tokens["<|endoftext|>"]
 
-  ctx = np.tile(start_tokens, (model.batch_size,1))
+  ctx = start_tokens
   transcriptions = []
 
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
-    inferred, sum_probs = inferloop(np.array(ctx).reshape((1, -1)), encoded_audio, 0.2)
+    inferred, sum_probs = inferloop(np.tile(ctx, (5, 1)), encoded_audio, 0.2)
     candidate_idx = sum_probs.argmax().tolist()
     selected = inferred[candidate_idx]
 
