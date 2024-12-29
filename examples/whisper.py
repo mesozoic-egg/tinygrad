@@ -267,23 +267,20 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   eot = enc._special_tokens["<|endoftext|>"]
 
   ctx = np.tile(start_tokens, (model.batch_size,1))
-  transcriptions = [[] for _ in waveforms]
+  transcriptions = []
 
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
-    if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
-    else: ctx = [inferloop((np.array([c]*model.batch_size)), encoded_audio)[i] for i,c in enumerate(ctx)]
+    inferred = inferloop(np.array(ctx).reshape((1, -1)), encoded_audio)
+    selected = inferred[0]
 
-    for i, (res, arr) in enumerate(zip(transcriptions, ctx)):
-      if curr_frame*HOP_LENGTH <= len(waveforms[i]):
-        _res = arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None]
-        print(f"{enc.decode(_res)}")
-        res.extend(_res)
-    ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
+    tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
+    print(f"{enc.decode(tokens)}")
+    transcriptions.append(tokens)
+    ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
 
-  transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
-  return transcriptions if len(transcriptions) > 1 else transcriptions[0]
+  return " ".join(transcriptions)
 
 CHUNK = 1600
 RECORD_SECONDS = 10
