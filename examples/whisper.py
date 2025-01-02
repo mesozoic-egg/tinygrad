@@ -255,7 +255,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
 
   @TinyJit 
   def multinomial_sampling(logits: Tensor, temperature: int):
-    scaled = (logits / temperature).softmax(axis=-1)
+    scaled = (logits / (temperature if temperature != 0 else 1)).softmax(axis=-1)
     next_tokens = scaled.multinomial(1)
     probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
     return next_tokens, probs
