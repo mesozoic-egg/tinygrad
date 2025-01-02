@@ -295,7 +295,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
     to_decode = np.tile(ctx, (5, 1))
-    for t in [0, 0.2, 0.4, 0.6]:
+    for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
       inferred, sum_probs = inferloop(to_decode, encoded_audio, t)
       candidate_idx = sum_probs.argmax().tolist()
       selected = inferred[candidate_idx]
@@ -306,7 +306,9 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
         transcriptions.append(text)
         break
       print(f"\n{curr_frame=} Too repetitive, trying higher temp: \033[31m{text}\033[0m")
-      
+    else:
+      print(f"\n{curr_frame=} No successful samplings after trying all temperatures, fall back to <nospeech>")
+      selected = np.array([enc._special_tokens['<|nospeech|>']])
 
     ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
 
