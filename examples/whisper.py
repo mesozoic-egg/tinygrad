@@ -249,17 +249,26 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
+  @TinyJit
+  def argmax_sampling(logits: Tensor):
+    return logits.argmax(axis=-1)
+
+  @TinyJit 
+  def multinomial_sampling(logits: Tensor, temperature: int):
+    scaled = (logits / temperature).softmax(axis=-1)
+    next_tokens = scaled.multinomial(1)
+    probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
+    return next_tokens, probs
+
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int):
     pos, next_tokens = 0, ctx
     sum_probs = Tensor.zeros(ctx.shape[0])
     for i in range((nsample-len(start_tokens))*2):
-      logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1]
+      logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
       if temperature == 0:
-        next_tokens = logits.argmax(axis=-1)
+        next_tokens = argmax_sampling(logits)
       else:
-        scaled = (logits / temperature).softmax(axis=-1)
-        next_tokens = scaled.multinomial(1)
-        probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
+        next_tokens, probs = multinomial_sampling(logits, temperature)
         sum_probs += probs
       next_tokens = next_tokens.numpy().astype(np.int32).reshape(-1, 1)
       next_tokens[ctx[:, -1] == eot] = eot
