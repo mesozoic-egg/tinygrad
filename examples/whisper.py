@@ -5,7 +5,7 @@ from typing import Optional, Union, Literal, List
 
 from tinygrad import Tensor, TinyJit, nn
 from tinygrad.nn.state import torch_load, load_state_dict
-from tinygrad.helpers import getenv, DEBUG, fetch
+from tinygrad.helpers import getenv, DEBUG, fetch, trange
 from tinygrad.ops import UOp
 
 import numpy as np
@@ -293,7 +293,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int):
     pos, next_tokens = 0, ctx
     sum_probs = Tensor.zeros(ctx.shape[0])
-    for i in range((nsample-len(start_tokens))*2):
+    for i in (_trange:=trange((nsample-len(start_tokens))*2)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
       if temperature == 0:
         next_tokens = argmax_sampling(logits)
