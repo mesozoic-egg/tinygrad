@@ -10,6 +10,29 @@ from tinygrad.helpers import getenv, DEBUG, fetch
 import numpy as np
 import librosa
 
+class CacheDict(collections.OrderedDict):
+    """Dict with a limited length, ejecting LRUs as needed."""
+
+    def __init__(self, *args, cache_len: int = 10, **kwargs):
+        assert cache_len > 0
+        self.cache_len = cache_len
+
+        super().__init__(*args, **kwargs)
+
+    def __setitem__(self, key, value):
+        super().__setitem__(key, value)
+        super().move_to_end(key)
+
+        while len(self) > self.cache_len:
+            oldkey = next(iter(self))
+            super().__delitem__(oldkey)
+
+    def __getitem__(self, key):
+        val = super().__getitem__(key)
+        super().move_to_end(key)
+
+        return val
+
 class MultiHeadAttention:
   def __init__(self, n_state, n_head, kv_caching: Literal['cross', 'self']=None, max_self_attn_cache_len=None):
     self.n_head = n_head
@@ -101,11 +124,18 @@ class TextDecoder:
     self.blocks = [ResidualAttentionBlock(n_text_state, n_text_head, is_decoder_block=True, max_self_attn_cache_len=self.max_self_attn_cache_len) for _ in range(n_text_layer)]
     self.ln = nn.LayerNorm(n_text_state)
     self.mask = Tensor.full((n_text_ctx, n_text_ctx), -np.inf).triu(1).realize()
-    self.getjitted = collections.defaultdict(lambda: TinyJit(self.forward))
-
+    self.jit = CacheDict(cache_len=2)
+  
+  def get_jitted(self, shape):
+    if shape in self.jit:
+      return self.jit[shape]
+    print(f"New JIT returned for {shape=}")
+    self.jit[shape] = TinyJit(self.forward)
+    return self.jit[shape]
+    
   def __call__(self, x: Tensor, pos: int, encoded_audio: Tensor):
     pos = Variable("self_attn_cache_len", 1, self.max_self_attn_cache_len).bind(pos) if pos else 0
-    return self.getjitted[x.shape](x, pos, encoded_audio)
+    return self.get_jitted(x.shape)(x, pos, encoded_audio)
 
   def forward(self, x:Tensor, pos:Union[Variable, Literal[0]], encoded_audio:Tensor):
     seqlen = x.shape[-1]
