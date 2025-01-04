@@ -3,9 +3,10 @@
 import sys, base64, multiprocessing, itertools, collections, zlib
 from typing import Optional, Union, Literal, List
 
-from tinygrad import Tensor, TinyJit, Variable, nn
+from tinygrad import Tensor, TinyJit, nn
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.helpers import getenv, DEBUG, fetch
+from tinygrad.ops import UOp
 
 import numpy as np
 import librosa
@@ -44,7 +45,7 @@ class MultiHeadAttention:
     self.kv_caching = kv_caching
     self.max_self_attn_cache_len = max_self_attn_cache_len
 
-  def __call__(self, x:Tensor, xa:Optional[Tensor]=None, mask:Optional[Tensor]=None, len: Union[Variable,int]=None):
+  def __call__(self, x:Tensor, xa:Optional[Tensor]=None, mask:Optional[Tensor]=None, len: Union[UOp,int]=None):
     if self.kv_caching == 'cross':
       if xa is not None:
         k, v = self.key(xa), self.value(xa)
@@ -90,7 +91,7 @@ class ResidualAttentionBlock:
     self.mlp = [nn.Linear(n_state, n_state*4), Tensor.gelu, nn.Linear(n_state*4, n_state)]
     self.mlp_ln = nn.LayerNorm(n_state)
 
-  def __call__(self, x, xa=None, mask=None, len: Union[Variable, int]=None):
+  def __call__(self, x, xa=None, mask=None, len: Union[UOp, int]=None):
     x = x + self.attn(self.attn_ln(x), mask=mask, len=len)
     if self.cross_attn: x = x + self.cross_attn(self.cross_attn_ln(x), xa)
     x = x + self.mlp_ln(x).sequential(self.mlp)
@@ -133,10 +134,10 @@ class TextDecoder:
     return self.jit[shape]
     
   def __call__(self, x: Tensor, pos: int, encoded_audio: Tensor):
-    pos = Variable("self_attn_cache_len", 1, self.max_self_attn_cache_len).bind(pos) if pos else 0
+    pos = UOp.variable("self_attn_cache_len", 1, self.max_self_attn_cache_len).bind(pos) if pos else 0
     return self.get_jitted(x.shape)(x, pos, encoded_audio)
 
-  def forward(self, x:Tensor, pos:Union[Variable, Literal[0]], encoded_audio:Tensor):
+  def forward(self, x:Tensor, pos:Union[UOp, Literal[0]], encoded_audio:Tensor):
     seqlen = x.shape[-1]
     x = self.token_embedding(x) + self.positional_embedding.shrink(((pos, pos+seqlen), None, None))
     for block in self.blocks: x = block(x, xa=encoded_audio, mask=self.mask, len=pos)
