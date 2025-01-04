@@ -129,7 +129,6 @@ class TextDecoder:
   def get_jitted(self, shape):
     if shape in self.jit:
       return self.jit[shape]
-    print(f"New JIT returned for {shape=}")
     self.jit[shape] = TinyJit(self.forward)
     return self.jit[shape]
     
