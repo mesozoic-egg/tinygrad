@@ -290,11 +290,23 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
     probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
     return next_tokens, probs
 
+  @TinyJit
+  def timestamp_filter(logits: Tensor):
+    timestamp = enc._special_tokens["<|0.00|>"]
+    timestamp_probs = logits[:, timestamp:].logsumexp(axis=-1)
+    text_probs = logits[:, :timestamp].logsumexp(axis=-1)
+    comparison = (timestamp_probs > text_probs).numpy()
+    logits = logits.numpy()
+    logits[comparison, :timestamp] = -np.inf
+    logits = Tensor(logits)
+    return logits
+
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int):
     pos, next_tokens = 0, ctx
     sum_probs = Tensor.zeros(ctx.shape[0])
     for i in (_trange:=trange((nsample-len(start_tokens))*2)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
+      logits = timestamp_filter(logits)
       if temperature == 0:
         next_tokens = argmax_sampling(logits)
       else:
@@ -314,7 +326,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
     language_token = enc._special_tokens["<|startoftranscript|>"] + 1 + tuple(LANGUAGES.keys()).index("en")
     start_tokens.append(language_token)
     start_tokens.append(enc._special_tokens["<|transcribe|>"])
-  start_tokens.append(enc._special_tokens["<|notimestamps|>"])
+  # start_tokens.append(enc._special_tokens["<|notimestamps|>"])
 
   eot = enc._special_tokens["<|endoftext|>"]
 
