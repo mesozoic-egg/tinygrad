@@ -270,6 +270,46 @@ def compression_ratio(text) -> float:
   text_bytes = text.encode("utf-8")
   return len(text_bytes) / len(zlib.compress(text_bytes))
 
+@TinyJit
+def argmax_sampling(logits: Tensor):
+  return logits.argmax(axis=-1)
+
+@TinyJit
+def multinomial_sampling(logits: Tensor, temperature: int):
+  scaled = (logits / (temperature if temperature != 0 else 1)).softmax(axis=-1)
+  next_tokens = scaled.multinomial(1)
+  probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
+  return next_tokens, probs
+
+@TinyJit
+def timestamp_filter(logits: Tensor):
+  timestamp = enc._special_tokens["<|0.00|>"]
+  timestamp_probs = logits[:, timestamp:].logsumexp(axis=-1)
+  text_probs = logits[:, :timestamp].logsumexp(axis=-1)
+  comparison = (timestamp_probs > text_probs).numpy()
+  logits = logits.numpy()
+  logits[comparison, :timestamp] = -np.inf
+  logits = Tensor(logits)
+  return logits
+
+def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int, num_sample: int, eot: int):
+  pos, next_tokens = 0, ctx
+  sum_probs = Tensor.zeros(ctx.shape[0])
+  for i in (_trange:=trange(num_sample)):
+    logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
+    # logits = timestamp_filter(logits)
+    if temperature == 0:
+      next_tokens = argmax_sampling(logits)
+    else:
+      next_tokens, probs = multinomial_sampling(logits, temperature)
+      sum_probs += probs
+    next_tokens = next_tokens.numpy().astype(np.int32).reshape(-1, 1)
+    next_tokens[ctx[:, -1] == eot] = eot
+    ctx = np.concatenate((ctx, next_tokens), axis=1)
+    pos = ctx.shape[-1] - 1
+    if (next_tokens == eot).all(): break
+  return ctx, sum_probs
+
 def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=False):
   """
   Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
@@ -279,45 +319,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=Fals
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
-  @TinyJit
-  def argmax_sampling(logits: Tensor):
-    return logits.argmax(axis=-1)
-
-  @TinyJit
-  def multinomial_sampling(logits: Tensor, temperature: int):
-    scaled = (logits / (temperature if temperature != 0 else 1)).softmax(axis=-1)
-    next_tokens = scaled.multinomial(1)
-    probs = scaled[Tensor.arange(logits.shape[0]), next_tokens.flatten()]
-    return next_tokens, probs
-
-  @TinyJit
-  def timestamp_filter(logits: Tensor):
-    timestamp = enc._special_tokens["<|0.00|>"]
-    timestamp_probs = logits[:, timestamp:].logsumexp(axis=-1)
-    text_probs = logits[:, :timestamp].logsumexp(axis=-1)
-    comparison = (timestamp_probs > text_probs).numpy()
-    logits = logits.numpy()
-    logits[comparison, :timestamp] = -np.inf
-    logits = Tensor(logits)
-    return logits
-
-  def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int):
-    pos, next_tokens = 0, ctx
-    sum_probs = Tensor.zeros(ctx.shape[0])
-    for i in (_trange:=trange((nsample-len(start_tokens))*2)):
-      logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
-      # logits = timestamp_filter(logits)
-      if temperature == 0:
-        next_tokens = argmax_sampling(logits)
-      else:
-        next_tokens, probs = multinomial_sampling(logits, temperature)
-        sum_probs += probs
-      next_tokens = next_tokens.numpy().astype(np.int32).reshape(-1, 1)
-      next_tokens[ctx[:, -1] == eot] = eot
-      ctx = np.concatenate((ctx, next_tokens), axis=1)
-      pos = ctx.shape[-1] - 1
-      if (next_tokens == eot).all(): break
-    return ctx, sum_probs
 
   def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
@@ -339,7 +340,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=Fals
 
     to_decode = np.tile(ctx, (5, 1))
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
-      inferred, sum_probs = inferloop(to_decode, encoded_audio, t)
+      inferred, sum_probs = inferloop(to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, eot)
       candidate_idx = sum_probs.argmax().tolist()
       selected = inferred[candidate_idx]
       tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
