@@ -311,16 +311,9 @@ def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, t
   return ctx, sum_probs
 
 def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=False):
-  """
-  Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
-  Returns the transcribed text if a single waveform is provided, or an array of transcriptions if multiple are provided
-  """
-
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
-
-  def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
   if model.is_multilingual:
     # TODO detect language
@@ -328,16 +321,15 @@ def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=Fals
     start_tokens.append(language_token)
     start_tokens.append(enc._special_tokens["<|transcribe|>"])
   start_tokens.append(enc._special_tokens["<|notimestamps|>"])
-
   eot = enc._special_tokens["<|endoftext|>"]
-
+  def gettexttoks(line):
+    return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   ctx = start_tokens
   transcriptions = []
 
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     timestamp = str(datetime.timedelta(seconds=SEGMENT_SECONDS * curr_frame // FRAMES_PER_SEGMENT))
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
-
     to_decode = np.tile(ctx, (5, 1))
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
       inferred, sum_probs = inferloop(to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, eot)
