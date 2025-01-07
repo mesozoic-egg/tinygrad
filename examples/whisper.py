@@ -10,6 +10,8 @@ from tinygrad.ops import UOp
 
 import numpy as np
 import librosa
+import tiktoken
+from tiktoken import Encoding
 
 class CacheDict(collections.OrderedDict):
   """Dict with a limited length, ejecting LRUs as needed."""
@@ -228,8 +230,7 @@ def get_encoding(encoding_name):
   ]
   special_tokens = dict(zip(specials, itertools.count(n_vocab)))
   n_vocab += len(specials)
-  import tiktoken
-  return tiktoken.Encoding(
+  return Encoding(
     name=encoding_name,
     explicit_n_vocab=n_vocab,
     pat_str=r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+""",
@@ -263,7 +264,7 @@ def load_file_waveform(filename):
   waveform, _ = librosa.load(filename, sr=RATE)
   return waveform
 
-def transcribe_file(model, enc, filename, output_fh):
+def transcribe_file(model, enc: Encoding, filename, output_fh):
   return transcribe_waveform(model, enc, [load_file_waveform(filename)], output_fh)
 
 def compression_ratio(text) -> float:
@@ -282,9 +283,9 @@ def multinomial_sampling(logits: Tensor, temperature: int):
   return next_tokens, probs
 
 @TinyJit
-def timestamp_filter(logits: Tensor, tokenizer):
-  logits[:, Tensor([tokenizer._special_tokens["<|notimestamps|>"]])] = -math.inf
-  timestamp = tokenizer._special_tokens["<|0.00|>"]
+def timestamp_filter(logits: Tensor, enc: Encoding):
+  logits[:, Tensor([enc._special_tokens["<|notimestamps|>"]])] = -math.inf
+  timestamp = enc._special_tokens["<|0.00|>"]
   timestamp_probs = logits[:, timestamp:].logsumexp(axis=-1)
   text_probs = logits[:, :timestamp].logsumexp(axis=-1)
   comparison = (timestamp_probs > text_probs).numpy()
@@ -299,8 +300,8 @@ def non_speech_filter(logits: Tensor):
   logits[:, tokens] = -math.inf
 
 @TinyJit
-def suppress_blank(logits: Tensor, tokenizer):
-  tokens = Tensor([tokenizer.encode(" ")[0], tokenizer._special_tokens["<|endoftext|>"]])
+def suppress_blank(logits: Tensor, enc):
+  tokens = Tensor([enc.encode(" ")[0], enc._special_tokens["<|endoftext|>"]])
   logits[:, tokens] = -math.inf
 
 def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, num_sample: int, enc):
@@ -325,7 +326,7 @@ def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, n
     if (next_tokens == eot).all(): break
   return ctx, sum_probs
 
-def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=False):
+def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, output_fh, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
