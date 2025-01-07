@@ -292,7 +292,7 @@ def timestamp_filter(logits: Tensor):
   logits = Tensor(logits)
   return logits
 
-def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio: Tensor, temperature: int, num_sample: int, eot: int):
+def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, num_sample: int, eot: int):
   pos, next_tokens = 0, ctx
   sum_probs = Tensor.zeros(ctx.shape[0])
   for i in (_trange:=trange(num_sample)):
@@ -332,7 +332,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, output_fh, truncate=Fals
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
     to_decode = np.tile(ctx, (5, 1))
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
-      inferred, sum_probs = inferloop(to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, eot)
+      inferred, sum_probs = inferloop(model, to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, eot)
       candidate_idx = sum_probs.argmax().tolist()
       selected = inferred[candidate_idx]
       tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
