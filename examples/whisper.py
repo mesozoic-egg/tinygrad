@@ -282,8 +282,9 @@ def multinomial_sampling(logits: Tensor, temperature: int):
   return next_tokens, probs
 
 @TinyJit
-def timestamp_filter(logits: Tensor):
-  timestamp = enc._special_tokens["<|0.00|>"]
+def timestamp_filter(logits: Tensor, tokenizer):
+  logits[:, Tensor([tokenizer._special_tokens["<|notimestamps|>"]])] = -math.inf
+  timestamp = tokenizer._special_tokens["<|0.00|>"]
   timestamp_probs = logits[:, timestamp:].logsumexp(axis=-1)
   text_probs = logits[:, :timestamp].logsumexp(axis=-1)
   comparison = (timestamp_probs > text_probs).numpy()
@@ -311,7 +312,7 @@ def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, n
     if i == 0:
       suppress_blank(logits, enc)
     non_speech_filter(logits)
-    logits = timestamp_filter(logits)
+    logits = timestamp_filter(logits, enc)
     if temperature == 0:
       next_tokens = argmax_sampling(logits)
     else:
