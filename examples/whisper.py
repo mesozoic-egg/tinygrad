@@ -3,7 +3,7 @@
 import sys, base64, multiprocessing, itertools, collections, zlib, datetime, math
 from typing import Optional, Union, Literal, List
 
-from tinygrad import Tensor, TinyJit, nn
+from tinygrad import Tensor, TinyJit, nn, dtypes
 from tinygrad.nn.state import torch_load, load_state_dict
 from tinygrad.helpers import getenv, DEBUG, fetch, trange
 from tinygrad.ops import UOp
@@ -304,21 +304,21 @@ def suppress_blank(logits: Tensor, enc):
   tokens = Tensor([enc.encode(" ")[0], enc._special_tokens["<|endoftext|>"]])
   logits[:, tokens] = -math.inf
 
-# @TinyJit
-def replace_eot(tokens: Tensor, previous: Tensor, eot: int):
-  tokens = (previous == eot).where(eot, tokens)
-  completed = (tokens == eot).all()
+@TinyJit
+def replace_eot(tokens: Tensor, _eot: Tensor, eot: int):
+  _eot = _eot.bitwise_or(tokens == eot)
+  tokens = (_eot).where(eot, tokens)
+  completed = (_eot).all()
   return tokens, completed
 
 def inferloop(model, ctx: Tensor, encoded_audio: Tensor, temperature: int, num_sample: int, enc: Encoding):
   eot = enc._special_tokens["<|endoftext|>"]
   pos, next_tokens = 0, ctx
   sum_probs = Tensor.zeros(ctx.shape[0])
-  previous_tokens = ctx[:, -1].reshape((-1, 1)).contiguous()
+  _eot = Tensor.zeros(ctx.shape[0], dtype=dtypes.bool).contiguous()
   for i in (_trange:=trange(num_sample)):
     logits = model.decoder(next_tokens, pos, encoded_audio)[:, -1].contiguous()
-    if i == 0:
-      suppress_blank(logits, enc)
+    if i == 0: suppress_blank(logits, enc)
     non_speech_filter(logits)
     logits = timestamp_filter(logits, enc)
     if temperature == 0:
@@ -326,14 +326,14 @@ def inferloop(model, ctx: Tensor, encoded_audio: Tensor, temperature: int, num_s
     else:
       next_tokens, probs = multinomial_sampling(logits, temperature)
       sum_probs += probs
+    next_tokens, done = replace_eot(next_tokens.flatten(), _eot, eot)
     next_tokens = next_tokens.reshape((-1, 1))
-    next_tokens, done = replace_eot(next_tokens, previous_tokens, eot)
-    
-    previous_tokens = next_tokens
     ctx = ctx.cat(next_tokens, dim=1)
+    ctx.realize()
     pos = ctx.shape[-1] - 1
     if done.tolist(): break
   return ctx, sum_probs
+
 
 def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, output_fh, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
