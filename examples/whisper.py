@@ -391,21 +391,23 @@ def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, outpu
   while start_time < log_spec.shape[-1]:
     curr_frame = int(start_time) * 100
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
+    print(f"\n{enc.decode(ctx)=}")
     to_decode = Tensor(ctx)
     to_decode = to_decode.reshape((1, -1)).expand((5, -1))
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
       inferred, sum_probs = inferloop(model, to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, enc)
       candidate_idx = sum_probs.argmax().tolist()
       selected = inferred[candidate_idx].flatten().tolist()
-      eoti = selected.index(eot)
+      print(f"{enc.decode(selected)=}")
+      eoti = selected.index(eot) if selected.count(eot) else None
       soti = selected.index(start_tokens[-1]) + 1
       tokens = selected[soti:eoti]
-      # tokens = [50363, 1406, 11, 10194, 11, 2192, 262, 3249, 11, 2192, 262, 3249, 11, 2192, 262, 3249, 13, 1406, 11, 10194, 11, 3763, 11, 314, 4724, 11, 314, 655, 442, 524, 510, 655, 287, 262, 1351, 13, 1406, 11, 644, 356, 821, 1016, 284, 466, 318, 284, 467, 1351, 13, 314, 1101, 1016, 284, 923, 351, 11, 345, 760, 11, 345, 423, 262, 2694, 13, 1406, 11, 826, 783, 356, 423, 345, 423, 262, 2694, 13, 921, 423, 262, 2694, 460, 2652, 13, 51413, 51413]
       text = enc.decode(tokens)
+      print(f"{text=}")
       if compression_ratio(text) < 2.4: # this threshold is taken from openai's implementation
         segments = list(segment_and_seek(tokens, enc, start_time))
         for segment in segments:
-          text = f"{format_time(int(segment.start))} -> {format_time(int(segment.end))}: {segment.text}"
+          text = f"\033[31m{format_time(int(segment.start))} -> {format_time(int(segment.end))}: {segment.text}\033[0m"
           print(text)
           transcriptions.append(text)
           output_fh.write(text)
