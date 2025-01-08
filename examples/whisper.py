@@ -304,12 +304,20 @@ def suppress_blank(logits: Tensor, enc):
   tokens = Tensor([enc.encode(" ")[0], enc._special_tokens["<|endoftext|>"]])
   logits[:, tokens] = -math.inf
 
-def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, num_sample: int, enc):
+# @TinyJit
+def replace_eot(tokens: Tensor, previous: Tensor, eot: int):
+  tokens = (previous == eot).where(eot, tokens)
+  completed = (tokens == eot).all()
+  return tokens, completed
+
+def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, num_sample: int, enc: Encoding):
   eot = enc._special_tokens["<|endoftext|>"]
+  ctx: Tensor = Tensor(ctx)
   pos, next_tokens = 0, ctx
   sum_probs = Tensor.zeros(ctx.shape[0])
+  previous_tokens = ctx[:, -1].reshape((-1, 1)).contiguous()
   for i in (_trange:=trange(num_sample)):
-    logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].contiguous()
+    logits = model.decoder(next_tokens, pos, encoded_audio)[:, -1].contiguous()
     if i == 0:
       suppress_blank(logits, enc)
     non_speech_filter(logits)
@@ -319,12 +327,14 @@ def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, n
     else:
       next_tokens, probs = multinomial_sampling(logits, temperature)
       sum_probs += probs
-    next_tokens = next_tokens.numpy().astype(np.int32).reshape(-1, 1)
-    next_tokens[ctx[:, -1] == eot] = eot
-    ctx = np.concatenate((ctx, next_tokens), axis=1)
+    next_tokens = next_tokens.reshape((-1, 1))
+    next_tokens, done = replace_eot(next_tokens, previous_tokens, eot)
+    
+    previous_tokens = next_tokens
+    ctx = ctx.cat(next_tokens, dim=1)
     pos = ctx.shape[-1] - 1
-    if (next_tokens == eot).all(): break
-  return ctx, sum_probs
+    if done.tolist(): break
+  return ctx.numpy(), sum_probs
 
 def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, output_fh, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
@@ -346,7 +356,7 @@ def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, outpu
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     timestamp = str(datetime.timedelta(seconds=SEGMENT_SECONDS * curr_frame // FRAMES_PER_SEGMENT))
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
-    to_decode = np.tile(ctx, (5, 1))
+    to_decode = np.tile(ctx, (5, 1)).astype(np.int32)
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
       inferred, sum_probs = inferloop(model, to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, enc)
       candidate_idx = sum_probs.argmax().tolist()
