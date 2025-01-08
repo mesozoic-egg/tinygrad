@@ -1,6 +1,7 @@
 # thanks to https://github.com/openai/whisper for a good chunk of MIT licensed code
 
 import sys, base64, multiprocessing, itertools, collections, zlib, datetime, math
+from dataclasses import dataclass
 from typing import Optional, Union, Literal, List
 
 from tinygrad import Tensor, TinyJit, nn, dtypes
@@ -334,6 +335,36 @@ def inferloop(model, ctx: Tensor, encoded_audio: Tensor, temperature: int, num_s
     if done.tolist(): break
   return ctx, sum_probs
 
+@dataclass
+class Segment:
+  start: int
+  end: int
+  text: str
+  tokens: list[int]
+  
+def parse(timetoken: str):
+  return float(timetoken[2:-2])
+
+def format_time(seconds: int):
+  timestamp = str(datetime.timedelta(seconds=seconds))
+  return timestamp
+
+def segment_and_seek(tokens: list[int], enc: Encoding, timeoffset: int):
+  timestamp_pos = [i for i, tok in enumerate(tokens) if tok > enc._special_tokens["<|notimestamps|>"]]
+  if len(timestamp_pos) < 2:
+    text = [tok for tok in tokens if tok < enc._special_tokens["<|notimestamps|>"]]
+    yield Segment(timeoffset, timeoffset + 30, enc.decode(text), text)
+  else:  
+    total_timestamps = len(timestamp_pos)
+    for i in range(0, total_timestamps - total_timestamps % 2,2):
+      s = timestamp_pos[i]
+      e = timestamp_pos[i+1]
+      start_time = parse(enc.decode([tokens[s]])) + timeoffset
+      end_time = parse(enc.decode([tokens[e]])) + timeoffset
+      selected = tokens[s+1:e]
+      yield Segment(start_time, end_time, enc.decode(selected), selected)
+
+  
 
 def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, output_fh, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
@@ -352,8 +383,13 @@ def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, outpu
   ctx = start_tokens
   transcriptions = []
 
-  for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
-    timestamp = str(datetime.timedelta(seconds=SEGMENT_SECONDS * curr_frame // FRAMES_PER_SEGMENT))
+  # for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
+  curr_frame = 0
+  start_time = 0
+  FRAMES_PER_SECOND = FRAMES_PER_SEGMENT // SEGMENT_SECONDS # 100 frames per second
+  total_time = log_spec.shape[-1] // FRAMES_PER_SEGMENT * 30
+  while start_time < log_spec.shape[-1]:
+    curr_frame = int(start_time) * 100
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
     to_decode = Tensor(ctx)
     to_decode = to_decode.reshape((1, -1)).expand((5, -1))
@@ -364,16 +400,19 @@ def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, outpu
       eoti = selected.index(eot)
       soti = selected.index(start_tokens[-1]) + 1
       tokens = selected[soti:eoti]
+      # tokens = [50363, 1406, 11, 10194, 11, 2192, 262, 3249, 11, 2192, 262, 3249, 11, 2192, 262, 3249, 13, 1406, 11, 10194, 11, 3763, 11, 314, 4724, 11, 314, 655, 442, 524, 510, 655, 287, 262, 1351, 13, 1406, 11, 644, 356, 821, 1016, 284, 466, 318, 284, 467, 1351, 13, 314, 1101, 1016, 284, 923, 351, 11, 345, 760, 11, 345, 423, 262, 2694, 13, 1406, 11, 826, 783, 356, 423, 345, 423, 262, 2694, 13, 921, 423, 262, 2694, 460, 2652, 13, 51413, 51413]
       text = enc.decode(tokens)
       if compression_ratio(text) < 2.4: # this threshold is taken from openai's implementation
-        text = f"\n{timestamp}: {text}"
-        print(text)
-        transcriptions.append(text)
-        output_fh.write(text)
+        segments = list(segment_and_seek(tokens, enc, start_time))
+        for segment in segments:
+          text = f"{format_time(int(segment.start))} -> {format_time(int(segment.end))}: {segment.text}"
+          print(text)
+          transcriptions.append(text)
+          output_fh.write(text)
+          start_time = segment.end
+          selected = segment.tokens
         break
-      print(f"\n{timestamp} Too repetitive, trying higher temp: \033[31m{text}\033[0m")
     else:
-      print(f"\n{timestamp} No successful samplings after trying all temperatures, fall back to <nospeech>")
       selected = np.array([enc._special_tokens['<|nospeech|>']])
 
     ctx = [enc._special_tokens['<|startofprev|>']]+gettexttoks(selected)+start_tokens
