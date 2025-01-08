@@ -310,9 +310,8 @@ def replace_eot(tokens: Tensor, previous: Tensor, eot: int):
   completed = (tokens == eot).all()
   return tokens, completed
 
-def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, num_sample: int, enc: Encoding):
+def inferloop(model, ctx: Tensor, encoded_audio: Tensor, temperature: int, num_sample: int, enc: Encoding):
   eot = enc._special_tokens["<|endoftext|>"]
-  ctx: Tensor = Tensor(ctx)
   pos, next_tokens = 0, ctx
   sum_probs = Tensor.zeros(ctx.shape[0])
   previous_tokens = ctx[:, -1].reshape((-1, 1)).contiguous()
@@ -334,7 +333,7 @@ def inferloop(model, ctx: np.ndarray, encoded_audio: Tensor, temperature: int, n
     ctx = ctx.cat(next_tokens, dim=1)
     pos = ctx.shape[-1] - 1
     if done.tolist(): break
-  return ctx.numpy(), sum_probs
+  return ctx, sum_probs
 
 def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, output_fh, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
@@ -356,12 +355,15 @@ def transcribe_waveform(model: Whisper, enc: tiktoken.Encoding, waveforms, outpu
   for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
     timestamp = str(datetime.timedelta(seconds=SEGMENT_SECONDS * curr_frame // FRAMES_PER_SEGMENT))
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
-    to_decode = np.tile(ctx, (5, 1)).astype(np.int32)
+    to_decode = Tensor(ctx)
+    to_decode = to_decode.reshape((1, -1)).expand((5, -1))
     for t in [0, 0.2, 0.4, 0.6, 0.8, 1.0]:
       inferred, sum_probs = inferloop(model, to_decode, encoded_audio, t, (nsample-len(start_tokens))*2, enc)
       candidate_idx = sum_probs.argmax().tolist()
-      selected = inferred[candidate_idx]
-      tokens = selected[np.where(selected == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(selected == eot)[0]) else None]
+      selected = inferred[candidate_idx].flatten().tolist()
+      eoti = selected.index(eot)
+      soti = selected.index(start_tokens[-1]) + 1
+      tokens = selected[soti:eoti]
       text = enc.decode(tokens)
       if compression_ratio(text) < 2.4: # this threshold is taken from openai's implementation
         text = f"\n{timestamp}: {text}"
