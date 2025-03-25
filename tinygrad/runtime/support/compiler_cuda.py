@@ -111,17 +111,21 @@ class SASSCompiler(Compiler):
     ptx_code = ""
     sass_code = ""
     sass = 0
+    name = ""
     for line in src.splitlines(keepends=True):
-      if line.strip() == "<sass>":
+      if line.strip().startswith("#SASS"):
         sass = 1
+        name = line.strip().split(":")[1]
         continue
-      elif line.strip() == "</sass>":
+      elif line.strip() == "#END_SASS":
         sass = 0
         continue
       if sass:
         sass_code += line
       else:
         ptx_code += line
+    assert name, "function name not found in #SASS directive"
+    print(f"{name=}")
     with NamedTemporaryFile(mode="w+b", delete_on_close=True) as ptx, NamedTemporaryFile(delete_on_close=True) as cubin, \
       NamedTemporaryFile(delete_on_close=True) as cuasm, NamedTemporaryFile("w+b", delete_on_close=True) as cuasm_swapped, \
       NamedTemporaryFile(delete_on_close=True) as cubin2:
@@ -136,7 +140,7 @@ class SASSCompiler(Compiler):
       for line in cuasm:
         if state == 'seek_start':
           cuasm_swapped.write(line)
-          if line.decode().strip() == '.text.E_32:':
+          if line.decode().strip() == f".text.{name}:":
             cuasm_swapped.write(sass_code.encode())
             cuasm_swapped.write(b"\n")
             state = 'skip_until_empty'

@@ -27,7 +27,7 @@ class SASSRenderer(Renderer):
 	.param .u64 oned_fill_param_0
 )
 {
-<sass>
+#SASS:E_32
       [B------:R-:W-:-:S02]         MOV R1, c[0x0][0x28] ;
       [B------:R-:W0:-:S01]         S2R R2, SR_CTAID.X ;
       [B------:R-:W-:-:S01]         MOV R3, 0x4 ;
@@ -54,6 +54,6 @@ class SASSRenderer(Renderer):
       [B------:R-:W-:Y:S00]         NOP;
       [B------:R-:W-:Y:S00]         NOP;
   .L_x_1:
-</sass>
+#END_SASS
 }
 """
