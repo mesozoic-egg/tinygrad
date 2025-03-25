@@ -79,7 +79,7 @@ class NVPTXCompiler(PTXCompiler):
     jitlink_check(nvrtc.nvJitLinkDestroy(handle))
     return data
 
-class SASSCompiler(Compiler):
+class SASSCompilerIntercept(Compiler):
   def __init__(self, arch:str, cache_key="sass"):
     self.arch = arch
     super().__init__(f"compile_{cache_key}_{self.arch}")
@@ -100,4 +100,62 @@ class SASSCompiler(Compiler):
       cubin = cuasm_cubin_file.read()
       return cubin
 
+class SASSCompiler(Compiler):
+  def __init__(self, arch:str, cache_key="sass_render"):
+    self.arch = arch
+    super().__init__(f"compile_{cache_key}_{self.arch}")
+    
+  def compile(self, src: str):
+    from extra.sass.assembler.CubinFile import CubinFile
+    from extra.sass.assembler.CuAsmParser import CuAsmParser
+    ptx_code = ""
+    sass_code = ""
+    sass = 0
+    name = ""
+    for line in src.splitlines(keepends=True):
+      if line.strip().startswith("#SASS"):
+        sass = 1
+        name = line.strip().split(":")[1]
+        continue
+      elif line.strip() == "#END_SASS":
+        sass = 0
+        continue
+      if sass:
+        sass_code += line
+      else:
+        ptx_code += line
+    assert name, "function name not found in #SASS directive"
+    print(f"{name=}")
+    with NamedTemporaryFile(mode="w+b", delete_on_close=True) as ptx, NamedTemporaryFile(delete_on_close=True) as cubin, \
+      NamedTemporaryFile(delete_on_close=True) as cuasm, NamedTemporaryFile("w+b", delete_on_close=True) as cuasm_swapped, \
+      NamedTemporaryFile(delete_on_close=True) as cubin2:
+      print(ptx_code)
+      ptx.write(ptx_code.encode())
+      ptx.flush()
+      ptx.seek(0)
+      subprocess.run(["ptxas", f"-arch={self.arch}", "-m64", "-o", cubin.name, ptx.name], check=True)
+      cf = CubinFile(cubin.name)
+      cf.saveAsCuAsm(cuasm.name)
+      state = 'seek_start'
+      for line in cuasm:
+        if state == 'seek_start':
+          cuasm_swapped.write(line)
+          if line.decode().strip() == f".text.{name}:":
+            cuasm_swapped.write(sass_code.encode())
+            cuasm_swapped.write(b"\n")
+            state = 'skip_until_empty'
+        elif state == 'skip_until_empty':
+          if line.decode().strip() == '':
+            cuasm_swapped.write(line)
+            state = 'seek_start'
+        else:
+          cuasm_swapped.write(line)     
+      cuasm_swapped.flush()
+      cuasm_swapped.seek(0)
+      parser = CuAsmParser()
+      parser.parse(cuasm_swapped.name)
+      parser.saveAsCubin(cubin2.name)
+      ret = cubin2.read()
+      return ret
 
+      

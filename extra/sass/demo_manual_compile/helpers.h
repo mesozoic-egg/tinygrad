@@ -10,6 +10,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+using namespace std;
+
 // Error Code string definitions here
 typedef struct
 {
@@ -344,26 +346,55 @@ enum InitMode {
     STEP = 1,
     RANDOM = 2
 };
-void initMatrix(float *data, int n, InitMode mode)
+template<typename T>
+void initMatrix(T *data, int n, InitMode mode)
 {
     for (int i = 0; i < n; ++i)
     {
-        float value;
+        T value;
         switch (mode) {
             case ZERO:
-                value = 0.0;
+                value = T(0);
                 break;
             case STEP:
-                value = float(i);
+                value = T(i);
                 break;
             case RANDOM:
-                value = rand() / (float)RAND_MAX;
+                value = static_cast<T>(rand()) / static_cast<T>(RAND_MAX);
                 break;
             default:
                 printf("Invalid mode %d", mode);
                 exit(1);
         }
-        // printf("value %.2f", value);
         data[i] = value;
     }
+}
+
+void init_kernel(int argc, char **argv, CUfunction* kernel) {
+    CUdevice cuDevice;
+    CUcontext cuContext;
+    CUmodule cuModule;
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <kernel_name> <module_path>\n";
+        std::exit(EXIT_FAILURE);
+    }
+    std::string kernel_name = argv[1];
+    std::string module_path = argv[2];
+    int devID = 0;
+
+    checkCudaErrors(cuInit(0));
+    checkCudaErrors(cuDeviceGet(&cuDevice, devID));
+    checkCudaErrors(cuCtxCreate(&cuContext, 0, cuDevice));
+    checkCudaErrors(cuModuleLoad(&cuModule, module_path.c_str()));
+    checkCudaErrors(cuModuleGetFunction(kernel, cuModule, kernel_name.c_str()));
+}
+
+template<typename T>
+int init_mem(int size, T** host, CUdeviceptr* dev, InitMode content_mode) {
+    int sizeMem = size * sizeof(T);
+    *host = static_cast<T*>(malloc(sizeMem));
+    checkCudaErrors(cuMemAlloc(dev, sizeMem));
+    initMatrix<T>(*host, size, content_mode);
+    checkCudaErrors(cuMemcpyHtoD(*dev, *host, sizeMem));
+    return sizeMem;
 }

@@ -4,7 +4,10 @@ clean:
 	-rm *.cuasm *.cubin *.ptx
 	-rm addHost
 	
-%Host: %Host.cu
+%_test: %_host %.cubin
+	./${*}_host ${*} ${*}.cubin
+	
+%_host: %_host.cu helpers.h
 	nvcc -arch ${ARCH} -o ${@} ${<} -lcuda	-lcublas
 
 %.ptx: %.cu
@@ -19,4 +22,3 @@ dumped.%.cubin: %.ptx
 %.cubin: %.cuasm
 	python assemble.py -i ${<} -o ${@}
 	
-
