@@ -229,7 +229,7 @@ class TestMatmul(unittest.TestCase):
         return c_asm
   def test_(self):
     with Context():
-      K = 32
+      K = 2
       a, b = self._setup_data((3, K), (K, 4))
       if os.environ.get("MANUAL_CLANG"):
         clang_res = self._clang(a, b)

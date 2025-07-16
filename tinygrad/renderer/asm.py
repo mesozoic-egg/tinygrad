@@ -152,6 +152,7 @@ class Allocator:
       5: 9, #R9 
     }
     self.kernel: list[str] = []
+    self.i: int = 0
 
   def __getitem__(self, _key: UOp) -> RegBase:
     return self.assign(_key)
@@ -299,15 +300,22 @@ def alu(ctx, x):
   reg_type = IReg if dtypes.is_int(dtype) else FReg
   src0 = ctx.r.assign(x.src[0], reg_type=reg_type)
   src1 = ctx.r.assign(x.src[1], excludes=[x.src[0]], reg_type=reg_type)
-  dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
+  if ctx.r.uops[x.src[0]].end == ctx.r.i:
+    ctx.r.share(x, x.src[0])
+    dst = src0
+  else:
+    dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   _src0, _src1, _dst = src0.render(dtype.itemsize), src1.render(dtype.itemsize), dst.render(dtype.itemsize)
   if Arch.arm:
     return [f"{operator} {_dst}, {_src0}, {_src1};"]
   else:
     _mov = "mov" if dtypes.is_int(dtype) else "movss" 
-    return [f"{_mov} {_dst}, {_src0}",
-      f"{operator} {_dst}, {_src1}",]
+    if _dst == _src0:
+      return [f"{operator} {_dst}, {_src1}"]
+    else:
+      return [f"{_mov} {_dst}, {_src0}",
+        f"{operator} {_dst}, {_src1}",]
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
@@ -524,6 +532,7 @@ class AsmRenderer(Renderer):
     if DEBUG.value >= 6:
       for _u, v in r.uops.items(): print(v, oneline_uop(_u))
     for i,u in enumerate(uops):
+      self.r.i = i
       if DEBUG.value >= 6:
         print("=================================")
         print(i, r.uops[u], u)
@@ -781,6 +790,46 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
     with self.assertRaises(Exception):
       self.a.assign(self.uop3)
       self.a.assign(self.uop4, excludes=[self.uop3])
+
+class TestAllocatorAluShareReg(unittest.TestCase):
+  def test_add_no_share(self):
+    self.r = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, dtype=dtypes.float, arg=1)
+    self.var1 = Variable(self.uop1, 0, 4)
+    self.uop2 = UOp(Ops.CONST, dtype=dtypes.float, arg=2)
+    self.var2 = Variable(self.uop2, 1, 4)
+    self.uop3 = UOp(Ops.ADD, dtype=dtypes.float, src=(self.uop1, self.uop2), arg=3)
+    self.var3 = Variable(self.uop3, 2, 4)
+    self.r.uops[self.uop1] = self.var1
+    self.r.uops[self.uop2] = self.var2
+    self.r.uops[self.uop3] = self.var3
+    alu = [self.uop1, self.uop2, self.uop3]
+    self.r.assign_f32(self.uop1)
+    self.r.assign_f32(self.uop2)
+    rewriter = arm_rewrite if Arch.arm else x86_rewrite
+    l = rewriter.rewrite(self.uop3, self)
+    print(l)
+
+  def test_add_share(self):
+    self.r = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, dtype=dtypes.float, arg=1)
+    self.var1 = Variable(self.uop1, 0, 2)
+    self.uop2 = UOp(Ops.CONST, dtype=dtypes.float, arg=2)
+    self.var2 = Variable(self.uop2, 1, 2)
+    self.uop3 = UOp(Ops.ADD, dtype=dtypes.float, src=(self.uop1, self.uop2), arg=3)
+    self.var3 = Variable(self.uop3, 2, 4)
+    self.r.uops[self.uop1] = self.var1
+    self.r.uops[self.uop2] = self.var2
+    self.r.uops[self.uop3] = self.var3
+    alu = [self.uop1, self.uop2, self.uop3]
+    self.r.assign_f32(self.uop1)
+    self.r.assign_f32(self.uop2)
+    rewriter = arm_rewrite if Arch.arm else x86_rewrite
+    self.r.i = 2
+    l = rewriter.rewrite(self.uop3, self)
+    print(l)
+
+
 
 class TestReg(unittest.TestCase):
   def test_singleton(self):
