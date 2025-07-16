@@ -153,6 +153,7 @@ class Allocator:
     }
     self.kernel: list[str] = []
     self.i: int = 0
+    self.do_not_use: list[RegBase] = [IReg(4)]
 
   def __getitem__(self, _key: UOp) -> RegBase:
     return self.assign(_key)
@@ -165,11 +166,13 @@ class Allocator:
   def extend_kernel(self, l: list[str]):
     self.kernel.extend(l)
 
-  def alloc(self, excludes: list[UOp]=[], reg_type: Optional[type[RegBase]]=None) -> tuple[RegBase, list[str]]:
+  def alloc(self, excludes: list[UOp]=[], reg_type: Optional[type[RegBase]]=None,
+            exclude_regs: list[RegBase]=[]) -> tuple[RegBase, list[str]]:
     if reg_type is not None:
       pool = self.pools[reg_type]
       if len(pool):
-        return pool.pop(0), []
+        while (reg:=pool.pop(0)) in self.do_not_use: pass
+        return reg, []
       else:
         if reg_type is FReg:
           raise Exception("Not sure how to spill float register yet")
@@ -179,7 +182,7 @@ class Allocator:
             vars_in_regs.append(var)
         if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
         sorted_vars = sorted(vars_in_regs, key=lambda i: i.end, reverse=True)
-        last_ending_var, *vars = sorted_vars
+        last_ending_var, *_ = sorted_vars
         self.move_var_to_stack(last_ending_var)
         reg = self.pools[reg_type].pop(0)
         return reg, []
@@ -211,7 +214,8 @@ class Allocator:
     self.extend_kernel(k)
 
   def assign(self, _key: UOp, excludes: list[UOp]=[], reserve: bool=False,
-             reg_type: Optional[type[RegBase]]=IReg) -> RegBase:
+             reg_type: Optional[type[RegBase]]=IReg,
+             ) -> RegBase:
     if _key not in self.uops:
       raise Exception("Attempting to access a non-existent variable, maybe expired?")
     var = self.uops[_key]
@@ -380,11 +384,7 @@ def _index(ctx, x):
   if Arch.arm:
     return [ f"add {reg}, {src0_str}, {src1_str}, lsl #{lsl}" ]
   else:
-    return [
-      f"mov {reg}, {src1_str}",
-      f"shl {reg}, {lsl}",
-      f"add {reg}, {src0_str}",
-    ]
+    return [ f"lea {reg}, [{src0_str} + {src1_str} * {multiplier}]" ]
 
 def assign(ctx, x):
   reg_type = IReg if dtypes.is_int(x.src[0].dtype) else FReg
@@ -536,6 +536,9 @@ class AsmRenderer(Renderer):
       if DEBUG.value >= 6:
         print("=================================")
         print(i, r.uops[u], u)
+        print("src intervals:")
+        for src in u.src:
+          print(self.r.uops[src])
       r.free_expired(i)
       if u.op is Ops.DEFINE_GLOBAL:
         self.r.move_var_to_stack(r.uops[u])
@@ -1089,9 +1092,7 @@ class TestRender(unittest.TestCase):
     a = UOp(Ops.INDEX, dtypes.int.ptr(16), arg=None, src=(
       x2:=UOp(Ops.DEFINE_GLOBAL, dtypes.int.ptr(16), arg=0, src=()),
       x3:=UOp(Ops.CONST, dtypes.int, arg=None, src=()),))
-    self.render(a, ["mov rdx, rcx",
-                    "shl rdx, 2",
-                    "add rdx, rax"])
+    self.render(a, ["lea rdx, [rax + rcx * 4]"])
   @arm
   def test_arm_index(self):
     a = UOp(Ops.INDEX, dtypes.int.ptr(16), arg=None, src=(
