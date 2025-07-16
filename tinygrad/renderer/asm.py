@@ -353,7 +353,7 @@ def _range(ctx, x):
   counter = ctx.r.assign(x, reserve=True, reg_type=IReg).render64()
   return [
       f"mov {counter}, #0",
-      f"\n.LOOP_{x.arg}:"
+      f".LOOP_{x.arg}:"
   ]
 
 def endrange(ctx, x):
@@ -550,7 +550,7 @@ class AsmRenderer(Renderer):
         if (l:=rewriter.rewrite(u, ctx=self)) is None:
           raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
         l = cast(list[str], l)
-        l = [*r.flush_kernel(), *l]
+        l = ["", *r.flush_kernel(), *l]
         if DEBUG.value >= 6:
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
@@ -1076,7 +1076,7 @@ class TestRender(unittest.TestCase):
     a = UOp(Ops.RANGE, arg=0, src=(
       UOp(Ops.CONST, arg=4),
     ))
-    self.render(a, ["mov rax, #0", "\n.LOOP_0:"])
+    self.render(a, ["mov rax, #0", ".LOOP_0:"])
     b = UOp(Ops.ENDRANGE, src=(
       a,
     ))
@@ -1086,7 +1086,7 @@ class TestRender(unittest.TestCase):
     a = UOp(Ops.RANGE, arg=0, src=(
       UOp(Ops.CONST, arg=4),
     ))
-    self.render(a, ["mov x0, #0", "\n.LOOP_0:"])
+    self.render(a, ["mov x0, #0", ".LOOP_0:"])
     b = UOp(Ops.ENDRANGE, src=(
       a,
     ))
