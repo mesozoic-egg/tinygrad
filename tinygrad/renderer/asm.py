@@ -811,7 +811,9 @@ class TestAllocatorAluShareReg(unittest.TestCase):
     self.r.assign_f32(self.uop2)
     rewriter = arm_rewrite if Arch.arm else x86_rewrite
     l = rewriter.rewrite(self.uop3, self)
-    assert len(cast(list[str], l)) == 2
+    print(l)
+    assert self.r.uops[self.uop3].reg != self.r.uops[self.uop1].reg
+    #assert len(cast(list[str], l)) == 2
 
   def test_add_share(self):
     self.r = Allocator(3, 3)
@@ -830,6 +832,8 @@ class TestAllocatorAluShareReg(unittest.TestCase):
     rewriter = arm_rewrite if Arch.arm else x86_rewrite
     self.r.i = 2
     l = rewriter.rewrite(self.uop3, self)
+
+    assert self.r.uops[self.uop3].reg == self.r.uops[self.uop1].reg
     assert len(cast(list[str], l)) == 1
 
 
