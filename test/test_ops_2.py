@@ -143,19 +143,31 @@ class TestOps(unittest.TestCase):
         [76, 98],
         [124, 162]
         ], dtype=np.float32))
-  def test_matmul_f32_rand(self):
+
+  def _test_matmul_f32_rand(self, shape_a, shape_b):
     np.random.seed(0)
-    a = np.random.rand(3, 4).astype(np.float32)
-    b = np.random.rand(4, 2).astype(np.float32)
+    a = np.random.rand(*shape_a).astype(np.float32)
+    b = np.random.rand(*shape_b).astype(np.float32)
     a_t = Tensor(a)
     b_t = Tensor(b)
     np_res = np.matmul(a, b)
     with Context(NOOPT=1, DEBUG=0):
       clang_res = a_t.to("cpu").dot(b_t.to("cpu")).numpy()
     with Context(NOOPT=1):
-      #np.testing.assert_equal(clang_res, np_res)
-      #np.testing.assert_equal(np_res, a_t.to("asm").dot(b_t.to("asm")).numpy())
-      np.testing.assert_allclose(np_res, a_t.to("asm").dot(b_t.to("asm")).numpy())
+      asm_res = a_t.to("asm").dot(b_t.to("asm")).numpy()
+      np.testing.assert_allclose(clang_res, asm_res)
+    with Context(NOOPT=0):
+      asm_res_2 = a_t.to("asm").dot(b_t.to("asm")).numpy()
+      np.testing.assert_allclose(clang_res, asm_res_2)
+
+  def test_matmul_f32_rand_3_2_4(self):
+    self._test_matmul_f32_rand((3,4), (4,2))
+
+  def test_matmul_f32_rand_3_2_8(self):
+    self._test_matmul_f32_rand((3,8), (8,2))
+
+  def test_matmul_f32_rand_3_2_16(self):
+    self._test_matmul_f32_rand((3,16), (16,2))
 
   @unittest.skipUnless(os.environ.get("MANUAL"), "")
   def test_matmul_f32_rand_small(self):

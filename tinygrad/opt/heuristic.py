@@ -81,7 +81,7 @@ def hand_coded_optimizations(k:Kernel) -> list[Opt]:
   # if last reduce dim is small(ish), loop unroll the reduce
   upcast_size = prod(k.full_shape[a] for a in k.axes_of(AxisType.UPCAST, AxisType.UNROLL))
   if k.unrollable_dims and (upcast_size <= 4 or not k.axes_of(AxisType.UNROLL)) and (upcast_size < 64):
-    if (s:=k.full_shape[k.unrollable_dims[-1]]) <= 32:
+    if (s:=k.full_shape[k.unrollable_dims[-1]]) <= 8:
       k.apply_opt(Opt(OptOps.UNROLL, k.unrollable_dims[-1]-k.first_reduce, 0))
       # if it's small, upcast a second reduce dimension too
       if k.unrollable_dims and s <= 3 and k.full_shape[k.unrollable_dims[-1]] <= 3:
