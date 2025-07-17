@@ -96,6 +96,10 @@ class TestOps(unittest.TestCase):
     #with Context(NOOPT=0): helper_test_op([(8,8)], torch.abs, Tensor.abs)
     #helper_test_op([(45,65)], torch.abs, Tensor.abs)
 
+  def test_abs_2(self):
+    a = Tensor([0, -1.0, 2.0],  dtype=dtypes.float, device="cpu") 
+    np.testing.assert_equal(a.abs().numpy(), np.array([0, 1, 2]).astype(np.float32))
+
   @unittest.skip("")
   def test_sum(self):
     print(Tensor.ones(16, 16, dtype=dtypes.int).sum(axis=1).numpy())
