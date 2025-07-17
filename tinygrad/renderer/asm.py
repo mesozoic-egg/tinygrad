@@ -409,7 +409,10 @@ def float_to_bool(ctx, x, a):
   ctx.r.return_reg(temp_reg)
   print(f"{dst=}")
   if Arch.arm:
-    pass
+    return [
+	f"fcmp {src}, #0.0",    # Compare float with 0.0
+	f"cset {dst}, ne"       # Set dst=1 if not equal, else 0
+    ]
   else:
     return [
       f"xor {dst}, {dst}",
@@ -425,7 +428,10 @@ def float_cmplt(ctx, x, a, b):
   temp_reg, kernel = ctx.r.alloc(excludes=[src_a, src_b], reg_type=FReg)
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
-    pass
+    return [
+	f"fcmp {src_a}, {src_b}",   # Compare a and b
+	f"cset {dst}, mi"            # Set if less (mi = minus/Negative flag)
+    ]
   else:
     return [
       f"xor {dst}, {dst}",
@@ -436,13 +442,16 @@ def float_cmplt(ctx, x, a, b):
 
 def _where(ctx, x):
   cond, t, f = x.src
+  _dst = ctx.r.assign(x, reg_type=FReg)
+  _cond = ctx.r.assign(cond, reg_type=IReg)
+  _t = ctx.r.assign(t, reg_type=FReg, excludes=[_dst])
+  _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
   if Arch.arm:
-    pass
+    return [
+	f"cmp {_cond}, #0",          # Test condition ≠0
+	f"fcsel {_dst}, {_t}, {_f}, ne"  # Select _t if true, _f if false
+    ]
   else:
-    _dst = ctx.r.assign(x, reg_type=FReg)
-    _cond = ctx.r.assign(cond, reg_type=IReg)
-    _t = ctx.r.assign(t, reg_type=FReg, excludes=[_dst])
-    _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
     return [
       f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
       f"jz .f_case_{ctx.r.i}", #jump if ZF=1 => condition is false
