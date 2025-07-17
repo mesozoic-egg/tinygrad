@@ -412,10 +412,10 @@ def float_to_bool(ctx, x, a):
     pass
   else:
     return [
-      f"pxor {temp_reg}, {temp_reg}",
-      f"ucomiss {temp_reg}, {src}",
       f"xor {dst}, {dst}",
-      f"sete {dst.render8()}"
+      f"pxor {temp_reg}, {temp_reg}",
+      f"ucomiss {temp_reg}, {src}", # ZF=1 => src == 0, ZF=0 => src != 0
+      f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
 def float_cmplt(ctx, x, a, b):
@@ -428,10 +428,10 @@ def float_cmplt(ctx, x, a, b):
     pass
   else:
     return [
-      f"movss {temp_reg}, {src_a}",
-      f"ucomiss {temp_reg}, {src_b}",
       f"xor {dst}, {dst}",
-      f"setb {dst.render8()}"
+      f"movss {temp_reg}, {src_a}",
+      f"ucomiss {temp_reg}, {src_b}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+      f"setb {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
     ]
 
 def _where(ctx, x):
@@ -444,8 +444,8 @@ def _where(ctx, x):
     _t = ctx.r.assign(t, reg_type=FReg, excludes=[_dst])
     _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
     return [
-      f"test {_cond}, {_cond}",
-      f"jz .f_case_{ctx.r.i}",
+      f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
+      f"jz .f_case_{ctx.r.i}", #jump if ZF=1 => condition is false
       f"movaps {_dst}, {_t}",
       f"jmp .end_{ctx.r.i}",
       f".f_case_{ctx.r.i}:",
