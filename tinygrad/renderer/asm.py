@@ -7,7 +7,7 @@ from tinygrad import dtypes
 from tinygrad.dtype import DType, PtrDType
 from collections import OrderedDict, defaultdict
 from typing import List, Dict, Optional, cast, Literal, Union, Callable
-import struct, math, unittest, platform, enum
+import struct, math, unittest, platform, enum, os
 import platform
 
 class ArchType(enum.Enum):
@@ -415,7 +415,7 @@ def float_to_bool(ctx, x, a):
       f"pxor {temp_reg}, {temp_reg}",
       f"ucomiss {temp_reg}, {src}",
       f"xor {dst}, {dst}",
-      f"setne {dst.render8()}"
+      f"sete {dst.render8()}"
     ]
 
 def float_cmplt(ctx, x, a, b):
@@ -431,7 +431,7 @@ def float_cmplt(ctx, x, a, b):
       f"movss {temp_reg}, {src_a}",
       f"ucomiss {temp_reg}, {src_b}",
       f"xor {dst}, {dst}",
-      f"setne {dst.render8()}"
+      f"setb {dst.render8()}"
     ]
 
 def _where(ctx, x):
@@ -445,12 +445,12 @@ def _where(ctx, x):
     _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
     return [
       f"test {_cond}, {_cond}",
-      f"jnz .true_case{ctx.r.i}",
-      f"movaps {_dst}, {_f}",
-      f"jmp .end{ctx.r.i}",
-      f".true_case{ctx.r.i}:",
+      f"jz .f_case_{ctx.r.i}",
       f"movaps {_dst}, {_t}",
-      f".end{ctx.r.i}:",
+      f"jmp .end_{ctx.r.i}",
+      f".f_case_{ctx.r.i}:",
+      f"movaps {_dst}, {_f}",
+      f".end_{ctx.r.i}:",
     ]
 
 complex_rewrites = PatternMatcher([
@@ -659,7 +659,8 @@ class AsmRenderer(Renderer):
 {name}:
 {_kernel}
     """
-    with open("../tg-dev/matmul6/kernel.s", "wt") as f: f.write(ret)
+    if os.environ.get("MANUAL_ASM"):
+      with open("../tg-dev/abs/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 class Tests(unittest.TestCase):
