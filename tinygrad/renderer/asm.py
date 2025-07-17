@@ -45,12 +45,20 @@ class RegBase(metaclass=RegMeta):
   size: int # bits
   def __init__(self, id: int): self.id = id
   def __repr__(self): return self.render64()
+  def render8(self):  raise NotImplementedError()
   def render32(self): raise NotImplementedError()
   def render64(self): raise NotImplementedError()
   def render(self, itemsize: int): raise NotImplementedError()
 
 class IReg(RegBase):
   size = 64
+  def render8(self):
+    if Arch.arm: return self.render32()
+    else:
+      if self.id < 8:
+        return ["al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil"][self.id]
+      else:
+        return f"r{self.id}b"
   def render32(self):
     if Arch.arm: return f"w{self.id}"
     else: return ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
@@ -394,13 +402,69 @@ def assign(ctx, x):
   ctx.r.uops[x].stack = ctx.r.uops[x.src[0]].stack
   return [f"{opcode} {dst}, {src}"]
 
+def float_to_bool(ctx, x, a):
+  dst = ctx.r.assign(x, reg_type=IReg)
+  src = ctx.r.assign(a, reg_type=FReg)
+  temp_reg, _ = ctx.r.alloc(excludes=[src], reg_type=FReg)
+  ctx.r.return_reg(temp_reg)
+  print(f"{dst=}")
+  if Arch.arm:
+    pass
+  else:
+    return [
+      f"pxor {temp_reg}, {temp_reg}",
+      f"ucomiss {temp_reg}, {src}",
+      f"xor {dst}, {dst}",
+      f"setne {dst.render8()}"
+    ]
+
+def float_cmplt(ctx, x, a, b):
+  dst = ctx.r.assign(x, reg_type=IReg)
+  src_a = ctx.r.assign(a, reg_type=FReg)
+  src_b = ctx.r.assign(b, excludes=[src_a], reg_type=FReg)
+  temp_reg, kernel = ctx.r.alloc(excludes=[src_a, src_b], reg_type=FReg)
+  ctx.r.return_reg(temp_reg)
+  if Arch.arm:
+    pass
+  else:
+    return [
+      f"movss {temp_reg}, {src_a}",
+      f"ucomiss {temp_reg}, {src_b}",
+      f"xor {dst}, {dst}",
+      f"setne {dst.render8()}"
+    ]
+
+def _where(ctx, x):
+  cond, t, f = x.src
+  if Arch.arm:
+    pass
+  else:
+    _dst = ctx.r.assign(x, reg_type=FReg)
+    _cond = ctx.r.assign(cond, reg_type=IReg)
+    _t = ctx.r.assign(t, reg_type=FReg, excludes=[_dst])
+    _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
+    return [
+      f"test {_cond}, {_cond}",
+      f"jnz .true_case{ctx.r.i}",
+      f"movaps {_dst}, {_f}",
+      f"jmp .end{ctx.r.i}",
+      f".true_case{ctx.r.i}:",
+      f"movaps {_dst}, {_t}",
+      f".end{ctx.r.i}:",
+    ]
+
 complex_rewrites = PatternMatcher([
+  (UPat(Ops.CMPLT, name="x", src=(UPat(dtype=dtypes.float, name="a"),
+                                  UPat(dtype=dtypes.float, name="b"))),
+   float_cmplt),
+  (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
   (UPat(Ops.RANGE, name="x"), _range),
   (UPat(Ops.ENDRANGE, name="x"), endrange),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.CONST, name="x", dtype=dtypes.floats), const),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(dtype=dtypes.float, name="a"),)), float_to_bool),
 ])
 x86_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
