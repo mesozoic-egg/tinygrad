@@ -1,4 +1,4 @@
-import platform, subprocess, sys
+import platform, subprocess, sys, os
 from tinygrad.helpers import capstone_flatdump, getenv
 from tinygrad.device import Compiled, Compiler, MallocAllocator, CPUProgram
 from tinygrad.runtime.support.elf import jit_loader
@@ -12,6 +12,12 @@ class ClangJITCompiler(Compiler):
     # x18 is a reserved platform register. It is clobbered on context switch in macos and is used to store TEB pointer in windows on arm, don't use it
     target = 'x86_64' if sys.platform == 'win32' else platform.machine()
     args = [f'--target={target}-none-unknown-elf', '-O2', '-fPIC', '-ffreestanding', '-fno-math-errno', '-nostdlib', '-fno-ident']
+    if os.environ.get("FFP", 0):
+      if platform.machine() == "x86_64":
+        args.append("-march=native")
+    else:
+      if platform.machine() == "aarch64":
+        args.append("-ffp-contract=off")
     arch_args = ['-ffixed-x18'] if target == 'arm64' else []
     obj = subprocess.check_output([getenv("CC", 'clang'), '-c', '-x', 'c', *args, *arch_args, '-', '-o', '-'], input=src.encode('utf-8'))
     return jit_loader(obj)
