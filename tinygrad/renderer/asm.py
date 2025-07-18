@@ -251,7 +251,6 @@ class Allocator:
     if reserve: self.reserved[_key] = 1
     var.reg = reg
     assert var.reg is not None
-    print(f"{reg=}\n")
     return reg
   def assign_i32(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render32()
@@ -439,12 +438,12 @@ def to_bool(ctx, x, a):
   print(f"regs: {dst=} {src=} {temp_reg=}")
   if Arch.arm:
     if dtypes.is_int(a.dtype):
-      op = "cmp"
+      cmp = f"cmp {src}, #0"
     else:
-      op = "fcmp"
+      cmp = f"fcmp {src}, #0.0"
     return [
-	f"{op} {src}, #0",    # Compare float with 0.0
-	f"cset {dst}, ne"       # Set dst=1 if not equal, else 0
+      cmp,
+      f"cset {dst}, ne"       # Set dst=1 if not equal, else 0
     ]
   else:
     if dtypes.is_int(a.dtype):
@@ -472,11 +471,12 @@ def float_cmplt(ctx, x, a, b):
   print(f"\033[31mregs: {dst=} {src_a=} {src_b=}\033[0m")
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
+    size = a.dtype.itemsize
     if dtypes.is_int(a.dtype): op = "cmp"
     else: op = "fcmp"
     return [
-	f"{op} {src_a}, {src_b}",   # Compare a and b
-	f"cset {dst}, mi"            # Set if less (mi = minus/Negative flag)
+	f"{op} {src_a.render(size)}, {src_b.render(size)}",   # Compare a and b
+	f"cset {dst}, lt"            # Set if less (mi = minus/Negative flag)
     ]
   else:
     size = a.dtype.itemsize
@@ -507,9 +507,10 @@ def _where(ctx, x):
   if Arch.arm:
     if dtypes.is_int(x.dtype): op = "csel"
     else: op = "fcsel"
+    size=x.dtype.itemsize
     return [
 	f"cmp {_cond}, #0",          # Test condition ≠0
-	f"{op} {_dst}, {_t}, {_f}, ne"  # Select _t if true, _f if false
+	f"{op} {_dst.render(size)}, {_t.render(size)}, {_f.render(size)}, ne"  # Select _t if true, _f if false
     ]
   else:
     if dtypes.is_int(x.dtype): mov_op = "mov"
