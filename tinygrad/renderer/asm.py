@@ -346,14 +346,21 @@ def const(ctx, x):
   reg_str = reg.render(x.dtype.itemsize)
   label = f"const_{len(ctx.mem)}"
   if Arch.arm:
-    ctx.mem.append((label, f".single {x.arg}"))
+    if x.dtype.itemsize == 4: data_type = ".single"
+    else: data_type = ".double"
+    ctx.mem.append((label, f"{data_type} {x.arg}"))
     temp_reg, kernel = ctx.r.alloc([reg], IReg)
     ctx.r.return_reg(temp_reg)
     return [f"adrp {temp_reg}, {label}",
       f"ldr {reg_str}, [{temp_reg}, #:lo12:{label}]"]
   else:
-    op = "movss" if x.dtype.itemsize == 4 else "movsd"
-    ctx.mem.append((label, f".float {x.arg}"))
+    if x.dtype.itemsize == 4:
+      data_type = ".float"
+      op = "movss"
+    else:
+      data_type = ".double"
+      op = "movsd"
+    ctx.mem.append((label, f"{data_type} {x.arg}"))
     return [ f"{op} {reg_str}, [rip+{label}]" ]
 
 def _range(ctx, x):
@@ -414,10 +421,11 @@ def float_to_bool(ctx, x, a):
 	f"cset {dst}, ne"       # Set dst=1 if not equal, else 0
     ]
   else:
+    op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
     return [
       f"xor {dst}, {dst}",
       f"pxor {temp_reg}, {temp_reg}",
-      f"ucomiss {temp_reg}, {src}", # ZF=1 => src == 0, ZF=0 => src != 0
+      f"{op} {temp_reg}, {src}", # ZF=1 => src == 0, ZF=0 => src != 0
       f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
@@ -433,10 +441,12 @@ def float_cmplt(ctx, x, a, b):
 	f"cset {dst}, mi"            # Set if less (mi = minus/Negative flag)
     ]
   else:
+    cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
+    mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
     return [
       f"xor {dst}, {dst}",
-      f"movss {temp_reg}, {src_a}",
-      f"ucomiss {temp_reg}, {src_b}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+      f"{mov_op} {temp_reg}, {src_a}",
+      f"{cmp_op} {temp_reg}, {src_b}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
       f"setb {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
     ]
 
@@ -452,19 +462,20 @@ def _where(ctx, x):
 	f"fcsel {_dst}, {_t}, {_f}, ne"  # Select _t if true, _f if false
     ]
   else:
+    mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
     return [
       f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
       f"jz .f_case_{ctx.r.i}", #jump if ZF=1 => condition is false
-      f"movaps {_dst}, {_t}",
+      f"{mov_op} {_dst}, {_t}",
       f"jmp .end_{ctx.r.i}",
       f".f_case_{ctx.r.i}:",
-      f"movaps {_dst}, {_f}",
+      f"{mov_op} {_dst}, {_f}",
       f".end_{ctx.r.i}:",
     ]
 
 complex_rewrites = PatternMatcher([
-  (UPat(Ops.CMPLT, name="x", src=(UPat(dtype=dtypes.float, name="a"),
-                                  UPat(dtype=dtypes.float, name="b"))),
+  (UPat(Ops.CMPLT, name="x", src=(UPat(dtype=dtypes.floats, name="a"),
+                                  UPat(dtype=dtypes.floats, name="b"))),
    float_cmplt),
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.ASSIGN, name="x"), assign),
@@ -473,7 +484,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.ENDRANGE, name="x"), endrange),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.CONST, name="x", dtype=dtypes.floats), const),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(dtype=dtypes.float, name="a"),)), float_to_bool),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(dtype=dtypes.floats, name="a"),)), float_to_bool),
 ])
 x86_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
