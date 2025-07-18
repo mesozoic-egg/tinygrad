@@ -713,7 +713,7 @@ class AsmRenderer(Renderer):
     mem_data = [f"{a}: {b}" for a,b in mem]
     data_section = [
       ".section .data",
-      ".p2align 2",
+      ".p2align 3",
       *mem_data
     ]
     kernel = [

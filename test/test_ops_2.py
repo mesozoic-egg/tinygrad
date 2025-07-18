@@ -101,9 +101,11 @@ class TestOps(unittest.TestCase):
     np.testing.assert_equal(a.abs().numpy(), np.abs(np.array(data).astype(_to_np_dtype(dtype))))
 
   def test_abs_f32(self): self._test_abs([-1, 0, 2, -4], dtypes.float32)
-  def test_abs_f64(self): self._test_abs([-1, 0, 2, -4], dtypes.float64)
+  def test_abs_f64(self):
+    self._test_abs([-1, 0, 2, -4], dtypes.float64)
   def test_abs_f64_noopt(self):
-    with Context(NOOPT=1): self._test_abs([-1, 0, 2, -4], dtypes.float64)
+    with Context(NOOPT=1):
+      self._test_abs([-1, 0, 2, -4], dtypes.float64)
   def test_abs_i32(self):
     self._test_abs([-1, 0, 2, -4], dtypes.int32)
   def test_abs_i32_noopt(self):
