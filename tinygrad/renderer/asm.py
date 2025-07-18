@@ -181,7 +181,9 @@ class Allocator:
     self.kernel.extend(l)
 
   def alloc(self, excludes: list[UOp]=[], reg_type: Optional[type[RegBase]]=None,
-            exclude_regs: list[RegBase]=[]) -> tuple[RegBase, list[str]]:
+            exclude_regs: list[RegBase]=[],
+            debug:bool=False
+            ) -> tuple[RegBase, list[str]]:
     if reg_type is not None:
       pool = self.pools[reg_type]
       if len(pool):
@@ -195,6 +197,8 @@ class Allocator:
           if var.reg is not None and u not in excludes and u not in self.reserved:
             vars_in_regs.append(var)
         if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
+        if debug:
+          print(f"{vars_in_regs=}")
         sorted_vars = sorted(vars_in_regs, key=lambda i: i.end, reverse=True)
         last_ending_var, *_ = sorted_vars
         self.move_var_to_stack(last_ending_var)
@@ -229,18 +233,25 @@ class Allocator:
 
   def assign(self, _key: UOp, excludes: list[UOp]=[], reserve: bool=False,
              reg_type: Optional[type[RegBase]]=IReg,
+             debug:bool=False,
              ) -> RegBase:
+    if debug:
+      print(f"\nassigning {_key=}")
+      print(f"{excludes=}")
+      print(f"{reg_type=}")
+      print("")
     if _key not in self.uops:
       raise Exception("Attempting to access a non-existent variable, maybe expired?")
     var = self.uops[_key]
     if var.reg is not None:
       return var.reg
-    reg, kernel = self.alloc(excludes=excludes, reg_type=reg_type)
+    reg, kernel = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
       self.extend_kernel(var.load(reg, "stack"))
     if reserve: self.reserved[_key] = 1
     var.reg = reg
     assert var.reg is not None
+    print(f"{reg=}\n")
     return reg
   def assign_i32(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render32()
@@ -421,9 +432,11 @@ def to_bool(ctx, x, a):
   else:
     reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
-  src = ctx.r.assign(a, reg_type=reg_type)
-  temp_reg, _ = ctx.r.alloc(excludes=[src], reg_type=reg_type)
+  exclude_dst_reg = [x] if reg_type == IReg else []
+  src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
+  temp_reg, _ = ctx.r.alloc(excludes=[a]+exclude_dst_reg, reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
+  print(f"regs: {dst=} {src=} {temp_reg=}")
   if Arch.arm:
     if dtypes.is_int(a.dtype):
       op = "cmp"
@@ -435,7 +448,7 @@ def to_bool(ctx, x, a):
     ]
   else:
     if dtypes.is_int(a.dtype):
-      test_op = "test"
+      test_op = "cmp"
       reset_op = "xor"
     else:
       reset_op = "por"
@@ -448,12 +461,15 @@ def to_bool(ctx, x, a):
     ]
 
 def float_cmplt(ctx, x, a, b):
+  print(f"\033[31m{ctx.r.pools[IReg]=}\033[0m")
   if dtypes.is_int(a.dtype): reg_type = IReg
   else: reg_type = FReg
-  dst = ctx.r.assign(x, reg_type=IReg)
-  src_a = ctx.r.assign(a, reg_type=reg_type)
-  src_b = ctx.r.assign(b, excludes=[src_a], reg_type=reg_type)
-  temp_reg, kernel = ctx.r.alloc(excludes=[src_a, src_b], reg_type=reg_type)
+  dst = ctx.r.assign(x, reg_type=IReg, debug=True)
+  exclude_dst = [x] if reg_type == IReg else []
+  src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst, debug=True)
+  src_b = ctx.r.assign(b, excludes=[a] + exclude_dst, reg_type=reg_type, debug=True)
+  temp_reg, kernel = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type, debug=True)
+  print(f"\033[31mregs: {dst=} {src_a=} {src_b=}\033[0m")
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
     if dtypes.is_int(a.dtype): op = "cmp"
@@ -463,27 +479,31 @@ def float_cmplt(ctx, x, a, b):
 	f"cset {dst}, mi"            # Set if less (mi = minus/Negative flag)
     ]
   else:
+    size = a.dtype.itemsize
     if dtypes.is_int(a.dtype):
       mov_op = "mov"
-      cmp_op = "test"
+      cmp_op = "cmp"
+      set_op = "setl"
     else:
-      cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
+      cmp_op = "comiss" if a.dtype.itemsize == 4 else "comisd"
       mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
+      set_op = "setb"
     return [
       f"xor {dst}, {dst}",
-      f"{mov_op} {temp_reg}, {src_a}",
-      f"{cmp_op} {temp_reg}, {src_b}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-      f"setb {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
+      f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+      f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+      f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
     ]
 
 def _where(ctx, x):
   if dtypes.is_int(x.dtype): reg_type = IReg
   else: reg_type = FReg
   cond, t, f = x.src
-  _dst = ctx.r.assign(x, reg_type=reg_type)
   _cond = ctx.r.assign(cond, reg_type=IReg)
-  _t = ctx.r.assign(t, reg_type=reg_type, excludes=[_dst])
-  _f = ctx.r.assign(f, reg_type=reg_type, excludes=[_t, _dst])
+  exclude_cond = [cond] if reg_type == IReg else []
+  _dst = ctx.r.assign(x, reg_type=reg_type, excludes=exclude_cond)
+  _t = ctx.r.assign(t, reg_type=reg_type, excludes=[x]+exclude_cond)
+  _f = ctx.r.assign(f, reg_type=reg_type, excludes=[t, x]+exclude_cond)
   if Arch.arm:
     if dtypes.is_int(x.dtype): op = "csel"
     else: op = "fcsel"
