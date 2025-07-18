@@ -119,7 +119,10 @@ class Variable:
       if Arch.arm:
         return [f"str {self.reg.render64()}, [x29, #-{self.stack}]"]
       else:
-        op = "mov" if dtypes.is_int(self.uop.dtype) or hasattr(self.uop.dtype, "_base") else "movss"
+        if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
+          op = "mov"
+        else:
+          op = "movss" if self.uop.dtype.itemsize == 4 else "movdd"
         return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
     else:
       raise Exception("not implemented")
@@ -135,7 +138,10 @@ class Variable:
       if Arch.arm:
         return [f"ldr {reg.render64()}, [x29, #-{self.stack}]"]
       else:
-        op = "mov" if dtypes.is_int(self.uop.dtype) or hasattr(self.uop.dtype, "_base") else "movss"
+        if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
+          op = "mov"
+        else:
+          op = "movss" if self.uop.dtype.itemsize == 4 else "movdd"
         return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
     else: raise Exception("not implemented")
 
@@ -409,40 +415,60 @@ def assign(ctx, x):
   ctx.r.uops[x].stack = ctx.r.uops[x.src[0]].stack
   return [f"{opcode} {dst}, {src}"]
 
-def float_to_bool(ctx, x, a):
+def to_bool(ctx, x, a):
+  if dtypes.is_int(a.dtype):
+    reg_type = IReg
+  else:
+    reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
-  src = ctx.r.assign(a, reg_type=FReg)
-  temp_reg, _ = ctx.r.alloc(excludes=[src], reg_type=FReg)
+  src = ctx.r.assign(a, reg_type=reg_type)
+  temp_reg, _ = ctx.r.alloc(excludes=[src], reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
-  print(f"{dst=}")
   if Arch.arm:
+    if dtypes.is_int(a.dtype):
+      op = "cmp"
+    else:
+      op = "fcmp"
     return [
-	f"fcmp {src}, #0.0",    # Compare float with 0.0
+	f"{op} {src}, #0",    # Compare float with 0.0
 	f"cset {dst}, ne"       # Set dst=1 if not equal, else 0
     ]
   else:
-    op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
+    if dtypes.is_int(a.dtype):
+      test_op = "test"
+      reset_op = "xor"
+    else:
+      reset_op = "por"
+      test_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
     return [
       f"xor {dst}, {dst}",
-      f"pxor {temp_reg}, {temp_reg}",
-      f"{op} {temp_reg}, {src}", # ZF=1 => src == 0, ZF=0 => src != 0
+      f"{reset_op} {temp_reg}, {temp_reg}",
+      f"{test_op} {temp_reg}, {src}", # ZF=1 => src == 0, ZF=0 => src != 0
       f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
 def float_cmplt(ctx, x, a, b):
+  if dtypes.is_int(a.dtype): reg_type = IReg
+  else: reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
-  src_a = ctx.r.assign(a, reg_type=FReg)
-  src_b = ctx.r.assign(b, excludes=[src_a], reg_type=FReg)
-  temp_reg, kernel = ctx.r.alloc(excludes=[src_a, src_b], reg_type=FReg)
+  src_a = ctx.r.assign(a, reg_type=reg_type)
+  src_b = ctx.r.assign(b, excludes=[src_a], reg_type=reg_type)
+  temp_reg, kernel = ctx.r.alloc(excludes=[src_a, src_b], reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
+    if dtypes.is_int(a.dtype): op = "cmp"
+    else: op = "fcmp"
     return [
-	f"fcmp {src_a}, {src_b}",   # Compare a and b
+	f"{op} {src_a}, {src_b}",   # Compare a and b
 	f"cset {dst}, mi"            # Set if less (mi = minus/Negative flag)
     ]
   else:
-    cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
-    mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
+    if dtypes.is_int(a.dtype):
+      mov_op = "mov"
+      cmp_op = "test"
+    else:
+      cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
+      mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
     return [
       f"xor {dst}, {dst}",
       f"{mov_op} {temp_reg}, {src_a}",
@@ -451,18 +477,23 @@ def float_cmplt(ctx, x, a, b):
     ]
 
 def _where(ctx, x):
+  if dtypes.is_int(x.dtype): reg_type = IReg
+  else: reg_type = FReg
   cond, t, f = x.src
-  _dst = ctx.r.assign(x, reg_type=FReg)
+  _dst = ctx.r.assign(x, reg_type=reg_type)
   _cond = ctx.r.assign(cond, reg_type=IReg)
-  _t = ctx.r.assign(t, reg_type=FReg, excludes=[_dst])
-  _f = ctx.r.assign(f, reg_type=FReg, excludes=[_t, _dst])
+  _t = ctx.r.assign(t, reg_type=reg_type, excludes=[_dst])
+  _f = ctx.r.assign(f, reg_type=reg_type, excludes=[_t, _dst])
   if Arch.arm:
+    if dtypes.is_int(x.dtype): op = "csel"
+    else: op = "fcsel"
     return [
 	f"cmp {_cond}, #0",          # Test condition ≠0
-	f"fcsel {_dst}, {_t}, {_f}, ne"  # Select _t if true, _f if false
+	f"{op} {_dst}, {_t}, {_f}, ne"  # Select _t if true, _f if false
     ]
   else:
-    mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
+    if dtypes.is_int(x.dtype): mov_op = "mov"
+    else: mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
     return [
       f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
       f"jz .f_case_{ctx.r.i}", #jump if ZF=1 => condition is false
@@ -474,8 +505,8 @@ def _where(ctx, x):
     ]
 
 complex_rewrites = PatternMatcher([
-  (UPat(Ops.CMPLT, name="x", src=(UPat(dtype=dtypes.floats, name="a"),
-                                  UPat(dtype=dtypes.floats, name="b"))),
+  (UPat(Ops.CMPLT, name="x", src=(UPat(name="a"),
+                                  UPat(name="b"))),
    float_cmplt),
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.ASSIGN, name="x"), assign),
@@ -484,7 +515,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.ENDRANGE, name="x"), endrange),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.CONST, name="x", dtype=dtypes.floats), const),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(dtype=dtypes.floats, name="a"),)), float_to_bool),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(name="a"),)), to_bool),
 ])
 x86_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
