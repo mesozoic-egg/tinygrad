@@ -102,6 +102,7 @@ class TestOps(unittest.TestCase):
 
   def test_abs_f32(self): self._test_abs([0, -1, 2, -4], dtypes.float32)
   def test_abs_f64(self): self._test_abs([0, -1, 2, -4], dtypes.float64)
+  def test_abs_i32(self): self._test_abs([0, -1, 2, -4], dtypes.int32)
 
   @unittest.skip("")
   def test_sum(self):
