@@ -122,7 +122,7 @@ class Variable:
         if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
           op = "mov"
         else:
-          op = "movss" if self.uop.dtype.itemsize == 4 else "movdd"
+          op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
         return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
     else:
       raise Exception("not implemented")
@@ -141,7 +141,7 @@ class Variable:
         if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
           op = "mov"
         else:
-          op = "movss" if self.uop.dtype.itemsize == 4 else "movdd"
+          op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
         return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
     else: raise Exception("not implemented")
 
