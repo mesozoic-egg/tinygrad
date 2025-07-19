@@ -113,6 +113,10 @@ class TestOps(unittest.TestCase):
     self._test_abs([-1, 0, 2, -4], dtypes.int64)
     with Context(NOOPT=1): self._test_abs([-1, 0, 2, -4], dtypes.int64)
 
+  def test_acos(self):
+    with Context(NOOPT=1):
+      helper_test_op([(2,2)], lambda x: x.acos(), low=-1, high=1)
+
   @unittest.skip("")
   def test_sum(self):
     print(Tensor.ones(16, 16, dtype=dtypes.int).sum(axis=1).numpy())
