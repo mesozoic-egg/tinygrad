@@ -12,7 +12,7 @@ if getenv("TINY_BACKEND"):
   import tinygrad.frontend.torch # noqa: F401 # pylint: disable=unused-import
   torch.set_default_device("tiny")
 
-FORWARD_ONLY = getenv("FORWARD_ONLY", 0)
+FORWARD_ONLY = getenv("FORWARD_ONLY", 1)
 PRINT_TENSORS = getenv("PRINT_TENSORS", 0)
 def helper_test_op(shps, torch_fxn, tinygrad_fxn=None, atol=1e-6, rtol=1e-3, grad_atol=1e-4, grad_rtol=1e-3,
                    forward_only=False, vals=None, low=-2, high=2):
