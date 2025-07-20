@@ -338,7 +338,6 @@ def alu_old(ctx, x):
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   _src0, _src1, _dst = src0.render(dtype.itemsize), src1.render(dtype.itemsize), dst.render(dtype.itemsize)
 
-  print(f"\033[31m{_dst=} {_src0=} {_src1=}\033[0m")
   if Arch.arm:
     return [f"{operator} {_dst}, {_src0}, {_src1};"]
   else:
@@ -473,7 +472,6 @@ def to_bool(ctx, x, a):
   src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
   temp_reg, _ = ctx.r.alloc(excludes=[a]+exclude_dst_reg, reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
-  print(f"regs: {dst=} {src=} {temp_reg=}")
   if Arch.arm:
     if dtypes.is_int(a.dtype):
       cmp = f"cmp {src}, #0"
@@ -497,16 +495,14 @@ def to_bool(ctx, x, a):
       f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
-def float_cmplt(ctx, x, a, b):
-  print(f"\033[31m{ctx.r.pools[IReg]=}\033[0m")
+def float_cmp(ctx, x, a, b):
   if dtypes.is_int(a.dtype): reg_type = IReg
   else: reg_type = FReg
-  dst = ctx.r.assign(x, reg_type=IReg, debug=True)
+  dst = ctx.r.assign(x, reg_type=IReg)
   exclude_dst = [x] if reg_type == IReg else []
-  src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst, debug=True)
-  src_b = ctx.r.assign(b, excludes=[a] + exclude_dst, reg_type=reg_type, debug=True)
-  temp_reg, kernel = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type, debug=True)
-  print(f"\033[31mregs: {dst=} {src_a=} {src_b=}\033[0m")
+  src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
+  src_b = ctx.r.assign(b, excludes=[a] + exclude_dst, reg_type=reg_type)
+  temp_reg, kernel = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
     size = a.dtype.itemsize
@@ -521,11 +517,11 @@ def float_cmplt(ctx, x, a, b):
     if dtypes.is_int(a.dtype):
       mov_op = "mov"
       cmp_op = "cmp"
-      set_op = "setl"
+      set_op = "setl" if x.op is Ops.CMPLT else "setne"
     else:
       cmp_op = "comiss" if a.dtype.itemsize == 4 else "comisd"
       mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
-      set_op = "setb"
+      set_op = "setb" if x.op is Ops.CMPLT else "setne"
     return [
       f"xor {dst}, {dst}",
       f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
@@ -564,9 +560,9 @@ def _where(ctx, x):
     ]
 
 complex_rewrites = PatternMatcher([
-  (UPat(Ops.CMPLT, name="x", src=(UPat(name="a"),
+  (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
                                   UPat(name="b"))),
-   float_cmplt),
+   float_cmp),
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
@@ -677,8 +673,7 @@ class AsmRenderer(Renderer):
     kernel: List[str] = []
     self.uops = uops
     last_use: Dict[UOp, int] = {var:i for i,u in enumerate(uops) for var in (v for v in (u,) + u.src if v.dtype != dtypes.void)}
-    if DEBUG >= 6:
-      print(uops[-1])
+    if DEBUG >= 6: print(uops[-1])
 
     name = "test"
     uop_order = {} 
