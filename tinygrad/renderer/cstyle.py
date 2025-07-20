@@ -3,7 +3,7 @@ import os, math, sys
 from collections import defaultdict, Counter
 from tinygrad.opt import tc
 from tinygrad.uop.ops import GroupOp, Ops, UOp, PatternMatcher, UPat
-from tinygrad.helpers import strip_parens, getenv, prod, dedup, AMX
+from tinygrad.helpers import strip_parens, getenv, prod, dedup, AMX, DEBUG
 from tinygrad.dtype import ImageDType, dtypes, DType, PtrDType
 from tinygrad.renderer import Renderer
 from tinygrad.codegen.devectorizer import no_vectorized_alu
@@ -135,6 +135,10 @@ class CStyleLanguage(Renderer):
     c: defaultdict[str, int] = defaultdict(int)
     name = "test"
     for u in uops:
+      if DEBUG>=6:
+        print("\n========")
+        print(u)
+
       if u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
         continue
@@ -159,6 +163,8 @@ class CStyleLanguage(Renderer):
         r[u] = f"{prefix}{c[prefix]}"
 
       l = cast(str, self.string_rewrite.rewrite(u, ctx=self))
+
+      if DEBUG>=6: print(f"\033[32m{l}\033[0m")
       assert l is not None, f"failed to render {u.op} {u.dtype} {[(x.op,x.dtype) for x in u.src]} {u.arg}"
 
       if u.op in {Ops.ENDIF, Ops.ENDRANGE}: depth -= 1
@@ -173,6 +179,7 @@ class CStyleLanguage(Renderer):
         kernel.append("  "*depth + l)
         if prefix: c[prefix] += 1  # if it was used, increment
       if u.op in {Ops.IF, Ops.RANGE}: depth += 1
+
     del self.r
 
     # NOTE: this relies on bufs dict preserving order
