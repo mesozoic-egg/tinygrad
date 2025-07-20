@@ -259,6 +259,13 @@ class Allocator:
     return self.assign(_key, excludes, reserve, reg_type=FReg).render32()
   def assign_f64(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=FReg).render64()
+  def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False):
+    pool = self.pools[type(reg)]
+    var = self.uops[_key]
+    if reg in pool and var.reg is None:
+      var.reg = reg
+      return
+    print(f"{pool=}")
   
   def release(self, uop: UOp): del self.reserved[uop] 
 
@@ -323,6 +330,7 @@ AluOps = _AluOps({
   (Ops.SQRT, ArchType.X86, FReg, 32): "sqrtss",
   (Ops.SQRT, ArchType.X86, FReg, 64): "sqrtsd",
   (Ops.RECIP, ArchType.X86, FReg, 32): "rcpps",
+  (Ops.IDIV, ArchType.X86, FReg, 32): "idiv",
 })
 
 def alu_old(ctx, x):
@@ -1325,3 +1333,22 @@ class TestRender(unittest.TestCase):
       x3:=UOp(Ops.CONST, dtypes.int, arg=None, src=()),))
     self.render(a, ["add x2, x0, x1, lsl #2"]);
 
+
+class TestAllocatorAssignReg(unittest.TestCase):
+  def setUp(self):
+    self.a = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, arg=1)
+    self.var1 = Variable(self.uop1, 0, 10)
+    self.a.uops[self.uop1] = self.var1
+
+  def test_assign_ireg(self):
+    self.a.assign_reg(IReg(0), self.uop1)
+    ret = self.a.flush_kernel()
+    assert len(ret) == 0
+    assert self.var1.reg == IReg(0)
+
+  def test_assign_freg(self):
+    self.a.assign_reg(FReg(0), self.uop1)
+    ret = self.a.flush_kernel()
+    assert len(ret) == 0
+    assert self.var1.reg == FReg(0)
