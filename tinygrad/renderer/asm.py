@@ -602,6 +602,9 @@ x86_rewrite = PatternMatcher([
      lambda ctx, x, src: [f"movss {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float64, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movsd {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
+
+  (UPat(Ops.BITCAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
+    lambda ctx, x, a: [f"movd {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
 ]) + complex_rewrites
 
 arm_rewrite = PatternMatcher([
