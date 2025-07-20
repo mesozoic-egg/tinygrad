@@ -190,11 +190,10 @@ class Allocator:
         while (reg:=pool.pop(0)) in self.do_not_use: pass
         return reg, []
       else:
-        if reg_type is FReg:
-          raise Exception("Not sure how to spill float register yet")
         vars_in_regs = []
         for u, var in self.uops.items():
-          if var.reg is not None and u not in excludes and u not in self.reserved:
+          if var.reg is not None and u not in excludes and u not in self.reserved \
+            and isinstance(var.reg, reg_type):
             vars_in_regs.append(var)
         if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
         if debug:
@@ -885,6 +884,51 @@ class TestAllocatorSpill(unittest.TestCase):
     self.a.assign(self.uop3)
     assert self.a.stack_size == 8
     assert self.a.uops[self.uop2].stack == 8
+
+class TestAllocatorSpillFloat(unittest.TestCase):
+  def setUp(self):
+    self.a = Allocator(num_ireg=2, num_freg=2)
+    uop1 = UOp(Ops.CONST, dtype=dtypes.float32, arg=1)
+    uop2 = UOp(Ops.CONST, dtype=dtypes.float32, arg=2)
+    uop3 = UOp(Ops.CONST, dtype=dtypes.float32, arg=3)
+    self.uop1, self.uop2, self.uop3 = uop1, uop2, uop3
+    self.a.uops[uop1] = Variable(uop1, 0, 9)
+    self.a.uops[uop2] = Variable(uop2, 0, 10)
+    self.a.uops[uop3] = Variable(uop3, 0, 11)
+    self.a.assign(uop1, reg_type=FReg)
+    self.a.assign(uop2, reg_type=FReg)
+  def tearDown(self): del self.uop1, self.uop2, self.uop3, self.a
+
+  def test_spill(self):
+    reg = self.a.assign(self.uop3, reg_type=FReg)
+    kernel = self.a.flush_kernel()
+    assert reg == FReg(1)
+    assert self.a.uops[self.uop1].reg   is not None
+    assert self.a.uops[self.uop1].stack is None
+
+    assert self.a.uops[self.uop2].reg   is None
+    assert self.a.uops[self.uop2].stack is not None
+
+    assert self.a.uops[self.uop3].reg   is not None
+    assert self.a.uops[self.uop3].stack is None
+    assert len(kernel) == 1# and kernel[0].startswith("str")
+
+  def test_spill_with_stack_load(self):
+    self.a.uops[self.uop2].stack = 0
+    self.a.uops[self.uop3].stack = 8
+    self.a.stack_size = 16
+    reg = self.a.assign(self.uop3, reg_type=FReg)
+    kernel = self.a.flush_kernel()
+    assert self.a.uops[self.uop2].stack == 0
+    assert self.a.uops[self.uop3].stack == 8
+    assert len(kernel) == 2# and kernel[1].startswith("ldr")
+    assert self.a.stack_size == 16
+
+  def test_spill_with_stack_str(self):
+    assert self.a.stack_size == 0
+    self.a.assign(self.uop3, reg_type=FReg)
+    assert self.a.stack_size == 16
+    assert self.a.uops[self.uop2].stack == 16
 
 class TestAllocatorStackAll(unittest.TestCase):
   """
