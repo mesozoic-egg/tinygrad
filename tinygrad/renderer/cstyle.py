@@ -180,6 +180,7 @@ class CStyleLanguage(Renderer):
   def render(self, uops:list[UOp]) -> str: return self.render_kernel(*self._render(uops), uops)
 
 class ClangRenderer(CStyleLanguage):
+  supports_float4 = False
   device = "CPU"
   float4 = "(float4)"
   float4_style = ('{', '}')
