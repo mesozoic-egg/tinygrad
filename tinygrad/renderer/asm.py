@@ -321,9 +321,11 @@ AluOps = _AluOps({
   (Ops.ASSIGN, ArchType.X86, IReg): "mov",
   (Ops.ASSIGN, ArchType.X86, FReg, 32): "movss",
   (Ops.ASSIGN, ArchType.X86, FReg, 64): "movsd",
+  (Ops.SQRT, ArchType.X86, FReg, 32): "sqrtss",
+  (Ops.SQRT, ArchType.X86, FReg, 64): "sqrtsd",
 })
 
-def alu(ctx, x):
+def alu_old(ctx, x):
   dtype = x.src[0].dtype
   reg_type = IReg if dtypes.is_int(dtype) else FReg
   src0 = ctx.r.assign(x.src[0], reg_type=reg_type)
@@ -335,6 +337,8 @@ def alu(ctx, x):
     dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   _src0, _src1, _dst = src0.render(dtype.itemsize), src1.render(dtype.itemsize), dst.render(dtype.itemsize)
+
+  print(f"\033[31m{_dst=} {_src0=} {_src1=}\033[0m")
   if Arch.arm:
     return [f"{operator} {_dst}, {_src0}, {_src1};"]
   else:
@@ -344,6 +348,40 @@ def alu(ctx, x):
     else:
       return [f"{_mov} {_dst}, {_src0}",
         f"{operator} {_dst}, {_src1}",]
+
+def alu(ctx, x):
+  dtype = x.src[0].dtype
+  reg_type = IReg if dtypes.is_int(dtype) else FReg
+  src_regs = []
+  excludes = []
+  for _src in x.src:
+    _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
+    excludes.append(_src)
+    src_regs.append(_reg)
+  if ctx.r.uops[x.src[0]].end == ctx.r.i:
+    ctx.r.share(x, x.src[0])
+    dst = src_regs[0]
+  else:
+    dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
+  operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
+  _dst = dst.render(dtype.itemsize)
+  src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
+  if Arch.arm:
+    return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
+  else:
+    _mov = "mov" if dtypes.is_int(dtype) else "movss" 
+    if dst == src_regs[0] and len(src_regs_str) == 2:
+      return [f"{operator} {_dst}, {src_regs_str[1]}"]
+    elif len(src_regs_str) == 2:
+      return [f"{_mov} {_dst}, {src_regs_str[0]}",
+        f"{operator} {_dst}, {src_regs_str[1]}",]
+    elif _dst == src_regs_str[0] and len(src_regs_str) == 1:
+      return [f"{operator} {_dst}, {src_regs_str[0]}"]
+    elif len(src_regs_str) == 1:
+      return [f"{operator} {_dst}, {src_regs_str[0]}"]
+    else:
+      raise Exception("ALU error handling srcs")
+
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
@@ -612,6 +650,9 @@ class AsmRenderer(Renderer):
   has_shared = False
   global_max = None
   extra_matcher = extra_matcher
+  code_for_op = {
+    Ops.SQRT: lambda:None
+  }
 
   def __init__(self) -> None:
     super().__init__()
