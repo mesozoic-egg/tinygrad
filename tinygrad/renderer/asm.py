@@ -145,6 +145,24 @@ class Variable:
         return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
     else: raise Exception("not implemented")
 
+  def copy(self, dst: RegBase) -> list[str]:
+    assert self.reg is not None
+    if Arch.arm:
+      raise Exception("not implemented")
+    else:
+      if isinstance(self.reg, IReg) and isinstance(dst, IReg):
+        op = "mov"
+      elif isinstance(self.reg, FReg) and isinstance(dst, FReg):
+        if self.uop.dtype.itemsize == 4:
+          op = "movss"
+        else:
+          op = "movsd"
+      else:
+        op = "movq"
+    return [f"{op} {dst.render64()}, {self.reg.render64()}"]
+
+
+
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int = 0):
     self.pool: list[RegBase] = [IReg(i) for i in range(num_ireg-1, -1, -1)]
@@ -262,10 +280,18 @@ class Allocator:
   def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False):
     pool = self.pools[type(reg)]
     var = self.uops[_key]
-    if reg in pool and var.reg is None:
+    if reg in pool:
+      if var.reg is not None: self.extend_kernel(var.copy(reg))
       var.reg = reg
-      return
-    print(f"{pool=}")
+      pool.pop(pool.index(reg))
+    else:
+      vars = [v for v in self.uops.values() if v.reg == reg]
+      assert len(vars) == 1
+      var2 = vars[0]
+      self.save_var_to_stack(var2)
+      var2.reg = None
+      if var.reg is not None: self.extend_kernel(var.copy(reg))
+      var.reg = reg
   
   def release(self, uop: UOp): del self.reserved[uop] 
 
@@ -1335,20 +1361,108 @@ class TestRender(unittest.TestCase):
 
 
 class TestAllocatorAssignReg(unittest.TestCase):
-  def setUp(self):
+  def _test_assign_available(self, reg: RegBase):
     self.a = Allocator(3, 3)
     self.uop1 = UOp(Ops.CONST, arg=1)
     self.var1 = Variable(self.uop1, 0, 10)
     self.a.uops[self.uop1] = self.var1
-
-  def test_assign_ireg(self):
-    self.a.assign_reg(IReg(0), self.uop1)
+    self.a.assign_reg(reg, self.uop1)
     ret = self.a.flush_kernel()
     assert len(ret) == 0
-    assert self.var1.reg == IReg(0)
+    assert self.var1.reg == reg
+    assert reg not in self.a.pools[type(reg)]
 
-  def test_assign_freg(self):
-    self.a.assign_reg(FReg(0), self.uop1)
+  def test_assign_ireg(self): self._test_assign_available(IReg(0))
+  def test_assign_freg(self): self._test_assign_available(FReg(0))
+
+  def _test_assign_occupied(self, dtype: DType, reg: RegBase, reg_old: RegBase, k: list[str]):
+    self.a = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, arg=1, dtype=dtype)
+    self.var1 = Variable(self.uop1, 0, 10)
+    self.uop2 = UOp(Ops.CONST, arg=2, dtype=dtype)
+    self.var2 = Variable(self.uop2, 0, 10)
+    self.a.uops[self.uop1] = self.var1
+    self.a.uops[self.uop2] = self.var2
+    self.var1.reg = reg_old
+    self.a.assign_reg(reg, self.uop1)
     ret = self.a.flush_kernel()
-    assert len(ret) == 0
-    assert self.var1.reg == FReg(0)
+    assert ret == k
+    assert self.var1.reg == reg
+
+  def test_assign_occupied_ireg(self):
+    ret = [f"mov rax, rcx"] if Arch.x86 else ["mov r0, r1"]
+    self._test_assign_occupied(dtypes.int, IReg(0), IReg(1), ret)
+
+  def test_assign_occupied_freg(self):
+    ret = [f"movss xmm0, xmm1"] if Arch.x86 else [f"fmov d0, d1"]
+    self._test_assign_occupied(dtypes.float, FReg(0), FReg(1), ret)
+
+  def _unassigned_var_spill_reg(self, dtype: DType, reg: RegBase, stack: int, k: list[str]):
+    self.a = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, arg=1, dtype=dtype)
+    self.var1 = Variable(self.uop1, 0, 10)
+    self.uop2 = UOp(Ops.CONST, arg=2, dtype=dtype)
+    self.var2 = Variable(self.uop2, 0, 10)
+    self.a.uops[self.uop1] = self.var1
+    self.a.uops[self.uop2] = self.var2
+    self.a.assign_reg(reg, self.uop2)
+    self.a.flush_kernel()
+    self.a.assign_reg(reg, self.uop1)
+    ret = self.a.flush_kernel()
+    assert ret == k
+    assert self.var1.reg == reg
+    assert self.var2.reg == None
+    assert self.var2.stack == stack
+
+  def test_unassigned_var_spill_reg_i32(self):
+    k = ["mov [rbp - 8], rax"] if Arch.x86 else []
+    self._unassigned_var_spill_reg(dtypes.int, IReg(0), 8, k)
+
+  def test_unassigned_var_spill_reg_i64(self):
+    k = ["mov [rbp - 8], rax"] if Arch.x86 else []
+    self._unassigned_var_spill_reg(dtypes.int64, IReg(0), 8, k)
+
+  def test_unassigned_var_spill_reg_f32(self):
+    k = ["movss [rbp - 16], xmm0"] if Arch.x86 else []
+    self._unassigned_var_spill_reg(dtypes.float32, FReg(0), 16, k)
+
+  def test_unassigned_var_spill_reg_f64(self):
+    k = ["movsd [rbp - 16], xmm0"] if Arch.x86 else []
+    self._unassigned_var_spill_reg(dtypes.float64, FReg(0), 16, k)
+
+  def _assigned_var_spill_reg(self, dtype: DType, reg: RegBase,
+                              reg_old: RegBase,
+                              stack: int,
+                              k: list[str]):
+    self.a = Allocator(3, 3)
+    self.uop1 = UOp(Ops.CONST, arg=1, dtype=dtype)
+    self.var1 = Variable(self.uop1, 0, 10)
+    self.uop2 = UOp(Ops.CONST, arg=2, dtype=dtype)
+    self.var2 = Variable(self.uop2, 0, 10)
+    self.a.uops[self.uop1] = self.var1
+    self.a.uops[self.uop2] = self.var2
+    self.a.assign_reg(reg_old, self.uop1)
+    self.a.assign_reg(reg, self.uop2)
+    self.a.flush_kernel()
+    self.a.assign_reg(reg, self.uop1)
+    ret = self.a.flush_kernel()
+    assert ret == k
+    assert self.var1.reg == reg
+    assert self.var2.reg == None
+    assert self.var2.stack == stack
+
+  def test_assigned_var_spill_reg_i32(self):
+    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else []
+    self._assigned_var_spill_reg(dtypes.int, IReg(0), IReg(1), 8, k)
+
+  def test_assigned_var_spill_reg_i64(self):
+    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else []
+    self._assigned_var_spill_reg(dtypes.int64, IReg(0), IReg(1), 8, k)
+
+  def test_assigned_var_spill_reg_f32(self):
+    k = ["movss [rbp - 16], xmm0", "movss xmm0, xmm1"] if Arch.x86 else []
+    self._assigned_var_spill_reg(dtypes.float32, FReg(0), FReg(1), 16, k)
+
+  def test_assigned_var_spill_reg_f64(self):
+    k = ["movsd [rbp - 16], xmm0", "movsd xmm0, xmm1"] if Arch.x86 else []
+    self._assigned_var_spill_reg(dtypes.float64, FReg(0), FReg(1), 16, k)
