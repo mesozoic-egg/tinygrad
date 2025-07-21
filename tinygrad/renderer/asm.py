@@ -71,6 +71,7 @@ class IReg(RegBase):
     """
     itemsize: bytes
     """
+    if itemsize == 1: return self.render8()
     if itemsize == 4: return self.render32()
     if itemsize == 8: return self.render64()
     raise Exception(f"Either 4 or 8 bytes for register, received {itemsize}")
@@ -269,6 +270,8 @@ class Allocator:
     var.reg = reg
     assert var.reg is not None
     return reg
+  def assign_i8(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+    return self.assign(_key, excludes, reserve, reg_type=IReg).render8()
   def assign_i32(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render32()
   def assign_i64(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
@@ -633,6 +636,9 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
+
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.bool))),
+      lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int64))),
@@ -651,6 +657,8 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"movsd {ctx.r.assign_f64(x, reserve=True)}, {ctx.r.assign_f64(src)}"]),
 
+  (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
+     lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
   (UPat(Ops.LOAD, name="x", dtype=dtypes.int32, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
   (UPat(Ops.LOAD, name="x", dtype=dtypes.int64, src=(UPat(name="src",),)),
