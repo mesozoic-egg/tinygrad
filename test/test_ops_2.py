@@ -324,6 +324,21 @@ class TestOps(unittest.TestCase):
   def test_acosh(self):
     helper_test_op([(2,)], lambda x: x.acosh(), grad_atol=1e-6)
 
+  def test_and(self):
+    #data = [[1,-8,1],[32,1,6]]
+    #tor = torch.tensor(data, dtype=torch.int)
+    #ten = Tensor(data, dtype=dtypes.int32)
+    #helper_test_op([], lambda: tor&tor, lambda: ten&ten, forward_only=True)
+    #helper_test_op([], lambda: tor&0x1337, lambda: ten&0x1337, forward_only=True)
+    #helper_test_op([], lambda: 0x1337&tor, lambda: 0x1337&ten, forward_only=True)
+
+    data = [[True, True, False, False], [True, False, True, False]]
+    tor0, tor1 = torch.tensor(data[0], dtype=torch.bool),  torch.tensor(data[1], dtype=torch.bool)
+    ten0, ten1 = Tensor(data[0], dtype=dtypes.bool), Tensor(data[1], dtype=dtypes.bool)
+    helper_test_op([], lambda: tor0&tor1, lambda: ten0&ten1, forward_only=True)
+
+    #helper_test_op(None, lambda x: (1 < x) & (x < 2), forward_only=True, vals=[[1.2, 1.2, 1.2, 3.2]])
+
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
   t0 = time.time()

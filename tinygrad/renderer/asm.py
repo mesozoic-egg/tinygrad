@@ -357,6 +357,7 @@ AluOps = _AluOps({
   (Ops.SQRT, ArchType.X86, FReg, 64): "sqrtsd",
   (Ops.RECIP, ArchType.X86, FReg, 32): "rcpps",
   (Ops.IDIV, ArchType.X86, FReg, 32): "idiv",
+  (Ops.AND,): "and"
 })
 
 def alu_old(ctx, x):
