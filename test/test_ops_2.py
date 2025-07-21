@@ -317,6 +317,9 @@ class TestOps(unittest.TestCase):
         with Context(DEBUG=6):
           c_asm = speedrun("asm", a.to("asm").dot(b.to("asm")), repeats)
         np.testing.assert_equal(c_asm, c_cpu, )
+  def test_idiv(self):
+    helper_test_op(None, functools.partial(torch.div, rounding_mode="trunc"), Tensor.idiv, forward_only=True,
+                   vals=[[-4, 7, 5, 4, -7, 8], [2, -3, 8, -2, 3, 5]])
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()

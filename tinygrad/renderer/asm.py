@@ -593,16 +593,34 @@ def _where(ctx, x):
       f".end_{ctx.r.i}:",
     ]
 
+def idiv(ctx, x):
+  dividend, divisor = x.src
+  _dividend = ctx.r.assign_reg(IReg(0), dividend)
+  _divisor = ctx.r.assign_reg(IReg(3), divisor)
+  if Arch.x86:
+    _mov = ctx.r.flush_kernel()
+    ctx.r.assign_reg(IReg(0), x)
+    _mov2 = ctx.r.flush_kernel()
+    ret = [
+      *_mov,
+      "cdq",
+      "idiv ebx",
+      *_mov2
+    ]
+    print(f"{ret=}")
+    return ret
+
 complex_rewrites = PatternMatcher([
   (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
                                   UPat(name="b"))),
    float_cmp),
   (UPat(Ops.WHERE, name="x"), _where),
+  (UPat(Ops.IDIV, name="x"), idiv),
+  (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
   (UPat(Ops.RANGE, name="x"), _range),
   (UPat(Ops.ENDRANGE, name="x"), endrange),
-  (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.CONST, name="x", dtype=dtypes.floats), const),
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(name="a"),)), to_bool),
 ])
