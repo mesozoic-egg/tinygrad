@@ -323,6 +323,8 @@ class TestOps(unittest.TestCase):
 
   def test_acosh(self):
     helper_test_op([(2,)], lambda x: x.acosh(), grad_atol=1e-6)
+    helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-3, grad_rtol=1e-2, low=-300, high=-297)
+    helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-6, low=300, high=303)
 
   def test_and(self):
     #data = [[1,-8,1],[32,1,6]]
