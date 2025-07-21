@@ -321,6 +321,9 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, functools.partial(torch.div, rounding_mode="trunc"), Tensor.idiv, forward_only=True,
                    vals=[[-4, 7, 5, 4, -7, 8], [2, -3, 8, -2, 3, 5]])
 
+  def test_acosh(self):
+    helper_test_op([(2,)], lambda x: x.acosh(), grad_atol=1e-6)
+
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
   t0 = time.time()
