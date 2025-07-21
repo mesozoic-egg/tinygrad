@@ -596,18 +596,22 @@ def _where(ctx, x):
 def idiv(ctx, x):
   dividend, divisor = x.src
   _dividend = ctx.r.assign_reg(IReg(0), dividend)
-  _divisor = ctx.r.assign_reg(IReg(3), divisor)
+  _divisor = ctx.r.assign(divisor, reg_type=IReg)
+  _edx = [v for v in ctx.r.uops.values() if v.reg == IReg(2)]
+  mov2 = None
+  if len(_edx) >= 1:
+    edx = _edx[0]
+    ctx.r.move_var_to_stack(edx)
+    mov2 = edx.load(IReg(2), "stack")
   if Arch.x86:
     _mov = ctx.r.flush_kernel()
-    ctx.r.assign_reg(IReg(0), x)
-    _mov2 = ctx.r.flush_kernel()
+    ctx.r.uops[x].reg = IReg(0)
     ret = [
       *_mov,
       "cdq",
-      "idiv ebx",
-      *_mov2
+      f"idiv {_divisor.render32()}",
     ]
-    print(f"{ret=}")
+    if mov2: ret += mov2
     return ret
 
 complex_rewrites = PatternMatcher([
@@ -734,7 +738,6 @@ class AsmRenderer(Renderer):
     uop_order = {} 
     var_intervals: dict[UOp, Variable] = OrderedDict()
     for i, u in enumerate(uops):
-      #if u.dtype is not dtypes.void:
       var = Variable(u, i, -1)
       if u.op is Ops.DEFINE_GLOBAL:
         if Arch.arm:
