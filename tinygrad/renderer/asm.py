@@ -149,7 +149,10 @@ class Variable:
   def copy(self, dst: RegBase) -> list[str]:
     assert self.reg is not None
     if Arch.arm:
-      raise Exception("not implemented")
+      if isinstance(self.reg, IReg) and isinstance(dst, IReg):
+        op = "mov"
+      else:
+        op = "fmov"
     else:
       if isinstance(self.reg, IReg) and isinstance(dst, IReg):
         op = "mov"
@@ -365,7 +368,8 @@ AluOps = _AluOps({
   (Ops.RECIP, ArchType.ARM, FReg, 32): "frsqrte",
   (Ops.IDIV, ArchType.X86, FReg, 32): "idiv",
   (Ops.AND,): "and",
-  (Ops.OR,): "or"
+  (Ops.OR, ArchType.X86): "or",
+  (Ops.OR, ArchType.ARM): "orr",
 })
 
 def alu(ctx, x):
@@ -526,7 +530,7 @@ def float_cmp(ctx, x, a, b):
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
     size = a.dtype.itemsize
-    if dtypes.is_int(a.dtype): op = "cmp"
+    if reg_type == IReg: op = "cmp"
     else: op = "fcmp"
     return [
 	f"{op} {src_a.render(size)}, {src_b.render(size)}",   # Compare a and b
@@ -581,15 +585,15 @@ def _where(ctx, x):
 
 def idiv(ctx, x):
   dividend, divisor = x.src
-  _dividend = ctx.r.assign_reg(IReg(0), dividend)
-  _divisor = ctx.r.assign(divisor, reg_type=IReg)
-  _edx = [v for v in ctx.r.uops.values() if v.reg == IReg(2)]
-  mov2 = None
-  if len(_edx) >= 1:
-    edx = _edx[0]
-    ctx.r.move_var_to_stack(edx)
-    mov2 = edx.load(IReg(2), "stack")
   if Arch.x86:
+    _dividend = ctx.r.assign_reg(IReg(0), dividend)
+    _divisor = ctx.r.assign(divisor, reg_type=IReg)
+    _edx = [v for v in ctx.r.uops.values() if v.reg == IReg(2)]
+    mov2 = None
+    if len(_edx) >= 1:
+      edx = _edx[0]
+      ctx.r.move_var_to_stack(edx)
+      mov2 = edx.load(IReg(2), "stack")
     _mov = ctx.r.flush_kernel()
     ctx.r.uops[x].reg = IReg(0)
     ret = [
@@ -599,6 +603,15 @@ def idiv(ctx, x):
     ]
     if mov2: ret += mov2
     return ret
+  else:
+    _dividend = ctx.r.assign(dividend, reg_type=IReg)
+    _divisor = ctx.r.assign(divisor, reg_type=IReg)
+    _quotient = ctx.r.assign(x, reg_type=IReg)
+    ret = [
+      f"sdiv {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
+    ]
+    return ret
+
 
 complex_rewrites = PatternMatcher([
   (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
@@ -1432,7 +1445,7 @@ class TestAllocatorAssignReg(unittest.TestCase):
     assert self.var1.reg == reg
 
   def test_assign_occupied_ireg(self):
-    ret = [f"mov rax, rcx"] if Arch.x86 else ["mov r0, r1"]
+    ret = [f"mov rax, rcx"] if Arch.x86 else ["mov x0, x1"]
     self._test_assign_occupied(dtypes.int, IReg(0), IReg(1), ret)
 
   def test_assign_occupied_freg(self):
@@ -1457,19 +1470,19 @@ class TestAllocatorAssignReg(unittest.TestCase):
     assert self.var2.stack == stack
 
   def test_unassigned_var_spill_reg_i32(self):
-    k = ["mov [rbp - 8], rax"] if Arch.x86 else []
+    k = ["mov [rbp - 8], rax"] if Arch.x86 else ["str x0, [x29, #-8]"]
     self._unassigned_var_spill_reg(dtypes.int, IReg(0), 8, k)
 
   def test_unassigned_var_spill_reg_i64(self):
-    k = ["mov [rbp - 8], rax"] if Arch.x86 else []
+    k = ["mov [rbp - 8], rax"] if Arch.x86 else ["str x0, [x29, #-8]"]
     self._unassigned_var_spill_reg(dtypes.int64, IReg(0), 8, k)
 
   def test_unassigned_var_spill_reg_f32(self):
-    k = ["movss [rbp - 16], xmm0"] if Arch.x86 else []
+    k = ["movss [rbp - 16], xmm0"] if Arch.x86 else ["str d0, [x29, #-16]"]
     self._unassigned_var_spill_reg(dtypes.float32, FReg(0), 16, k)
 
   def test_unassigned_var_spill_reg_f64(self):
-    k = ["movsd [rbp - 16], xmm0"] if Arch.x86 else []
+    k = ["movsd [rbp - 16], xmm0"] if Arch.x86 else ["str d0, [x29, #-16]"]
     self._unassigned_var_spill_reg(dtypes.float64, FReg(0), 16, k)
 
   def _assigned_var_spill_reg(self, dtype: DType, reg: RegBase,
@@ -1494,17 +1507,25 @@ class TestAllocatorAssignReg(unittest.TestCase):
     assert self.var2.stack == stack
 
   def test_assigned_var_spill_reg_i32(self):
-    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else []
+    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else [
+      "str x0, [x29, #-8]", "mov x0, x1"
+      ]
     self._assigned_var_spill_reg(dtypes.int, IReg(0), IReg(1), 8, k)
 
   def test_assigned_var_spill_reg_i64(self):
-    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else []
+    k = ["mov [rbp - 8], rax", "mov rax, rcx"] if Arch.x86 else [
+      "str x0, [x29, #-8]", "mov x0, x1"
+      ]
     self._assigned_var_spill_reg(dtypes.int64, IReg(0), IReg(1), 8, k)
 
   def test_assigned_var_spill_reg_f32(self):
-    k = ["movss [rbp - 16], xmm0", "movss xmm0, xmm1"] if Arch.x86 else []
+    k = ["movss [rbp - 16], xmm0", "movss xmm0, xmm1"] if Arch.x86 else [
+      "str d0, [x29, #-16]", "fmov d0, d1"
+      ]
     self._assigned_var_spill_reg(dtypes.float32, FReg(0), FReg(1), 16, k)
 
   def test_assigned_var_spill_reg_f64(self):
-    k = ["movsd [rbp - 16], xmm0", "movsd xmm0, xmm1"] if Arch.x86 else []
+    k = ["movsd [rbp - 16], xmm0", "movsd xmm0, xmm1"] if Arch.x86 else [
+      "str d0, [x29, #-16]", "fmov d0, d1"
+      ]
     self._assigned_var_spill_reg(dtypes.float64, FReg(0), FReg(1), 16, k)
