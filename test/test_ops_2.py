@@ -343,6 +343,9 @@ class TestOps(unittest.TestCase):
   def test_all(self):
     helper_test_op([(3,4,5,6)], lambda x: x.all(), forward_only=True)
     helper_test_op(None, lambda x: x.all(), vals=[[True, True]], forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[True, False]], forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
+    helper_test_op([()], lambda x: x.all(), forward_only=True)
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
