@@ -327,12 +327,12 @@ class TestOps(unittest.TestCase):
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-6, low=300, high=303)
 
   def test_and(self):
-    #data = [[1,-8,1],[32,1,6]]
-    #tor = torch.tensor(data, dtype=torch.int)
-    #ten = Tensor(data, dtype=dtypes.int32)
-    #helper_test_op([], lambda: tor&tor, lambda: ten&ten, forward_only=True)
-    #helper_test_op([], lambda: tor&0x1337, lambda: ten&0x1337, forward_only=True)
-    #helper_test_op([], lambda: 0x1337&tor, lambda: 0x1337&ten, forward_only=True)
+    data = [[1,-8,1],[32,1,6]]
+    tor = torch.tensor(data, dtype=torch.int)
+    ten = Tensor(data, dtype=dtypes.int32)
+    helper_test_op([], lambda: tor&tor, lambda: ten&ten, forward_only=True)
+    helper_test_op([], lambda: tor&0x1337, lambda: ten&0x1337, forward_only=True)
+    helper_test_op([], lambda: 0x1337&tor, lambda: 0x1337&ten, forward_only=True)
 
     data = [[True, True, False, False], [True, False, True, False]]
     tor0, tor1 = torch.tensor(data[0], dtype=torch.bool),  torch.tensor(data[1], dtype=torch.bool)

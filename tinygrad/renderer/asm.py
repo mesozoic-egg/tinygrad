@@ -118,7 +118,13 @@ class Variable:
       assert self.stack is not None
       note = f""
       if Arch.arm:
-        return [f"str {self.reg.render64()}, [x29, #-{self.stack}]"]
+        if self.stack > 255:
+          sp = "x30"
+          stack = self.stack - 255
+        else:
+          sp = "x29"
+          stack = self.stack
+        return [f"str {self.reg.render64()}, [{sp}, #-{stack}]"]
       else:
         if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
           op = "mov"
@@ -137,7 +143,13 @@ class Variable:
     if from_stack:
       assert self.stack is not None
       if Arch.arm:
-        return [f"ldr {reg.render64()}, [x29, #-{self.stack}]"]
+        if self.stack > 255:
+          sp = "x30"
+          stack = self.stack - 255
+        else:
+          sp = "x29"
+          stack = self.stack
+        return [f"ldr {reg.render64()}, [{sp}, #-{stack}]"]
       else:
         if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
           op = "mov"
@@ -823,6 +835,7 @@ class AsmRenderer(Renderer):
       "stp x29, x30, [sp, #-16]!",
       "mov x29, sp",
       "mov x30, sp",
+      "sub x30, x30, #255",
       f"sub sp, sp, #{r.stack_size}",
     ] if self.arm else [
       "push rbp",
