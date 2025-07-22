@@ -353,42 +353,22 @@ AluOps = _AluOps({
   (Ops.MUL, ArchType.ARM, FReg): "fmul",
   (Ops.ASSIGN, ArchType.ARM, IReg): "mov",
   (Ops.ASSIGN, ArchType.ARM, FReg): "fmov",
-  (Ops.ASSIGN, ArchType.X86, IReg): "mov",
+  (Ops.ASSIGN, ArchType.X86, IReg, 8): "mov",
+  (Ops.ASSIGN, ArchType.X86, IReg, 32): "mov",
+  (Ops.ASSIGN, ArchType.X86, IReg, 64): "mov",
   (Ops.ASSIGN, ArchType.X86, FReg, 32): "movss",
   (Ops.ASSIGN, ArchType.X86, FReg, 64): "movsd",
   (Ops.SQRT, ArchType.X86, FReg, 32): "sqrtss",
   (Ops.SQRT, ArchType.X86, FReg, 64): "sqrtsd",
   (Ops.RECIP, ArchType.X86, FReg, 32): "rcpps",
   (Ops.IDIV, ArchType.X86, FReg, 32): "idiv",
-  (Ops.AND,): "and"
+  (Ops.AND,): "and",
+  (Ops.OR,): "or"
 })
-
-def alu_old(ctx, x):
-  dtype = x.src[0].dtype
-  reg_type = IReg if dtypes.is_int(dtype) else FReg
-  src0 = ctx.r.assign(x.src[0], reg_type=reg_type)
-  src1 = ctx.r.assign(x.src[1], excludes=[x.src[0]], reg_type=reg_type)
-  if ctx.r.uops[x.src[0]].end == ctx.r.i:
-    ctx.r.share(x, x.src[0])
-    dst = src0
-  else:
-    dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
-  operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
-  _src0, _src1, _dst = src0.render(dtype.itemsize), src1.render(dtype.itemsize), dst.render(dtype.itemsize)
-
-  if Arch.arm:
-    return [f"{operator} {_dst}, {_src0}, {_src1};"]
-  else:
-    _mov = "mov" if dtypes.is_int(dtype) else "movss" 
-    if _dst == _src0:
-      return [f"{operator} {_dst}, {_src1}"]
-    else:
-      return [f"{_mov} {_dst}, {_src0}",
-        f"{operator} {_dst}, {_src1}",]
 
 def alu(ctx, x):
   dtype = x.src[0].dtype
-  reg_type = IReg if dtypes.is_int(dtype) else FReg
+  reg_type = IReg if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else FReg
   src_regs = []
   excludes = []
   for _src in x.src:
@@ -406,7 +386,7 @@ def alu(ctx, x):
   if Arch.arm:
     return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
   else:
-    _mov = "mov" if dtypes.is_int(dtype) else "movss" 
+    _mov = "mov" if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else "movss" 
     if dst == src_regs[0] and len(src_regs_str) == 2:
       return [f"{operator} {_dst}, {src_regs_str[1]}"]
     elif len(src_regs_str) == 2:
@@ -493,7 +473,7 @@ def _index(ctx, x):
     return [ f"lea {reg}, [{src0_str} + {src1_str} * {multiplier}]" ]
 
 def assign(ctx, x):
-  reg_type = IReg if dtypes.is_int(x.src[0].dtype) else FReg
+  reg_type = IReg if dtypes.is_int(x.src[0].dtype) or dtypes.is_bool(x.src[0].dtype) else FReg
   dst = ctx.r.assign(x, reg_type=reg_type)
   src = ctx.r.assign(x.src[1], excludes=[x.src[0]], reg_type=reg_type)
   opcode = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
@@ -534,7 +514,7 @@ def to_bool(ctx, x, a):
     ]
 
 def float_cmp(ctx, x, a, b):
-  if dtypes.is_int(a.dtype): reg_type = IReg
+  if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype): reg_type = IReg
   else: reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
   exclude_dst = [x] if reg_type == IReg else []
@@ -552,7 +532,7 @@ def float_cmp(ctx, x, a, b):
     ]
   else:
     size = a.dtype.itemsize
-    if dtypes.is_int(a.dtype):
+    if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
       mov_op = "mov"
       cmp_op = "cmp"
       set_op = "setl" if x.op is Ops.CMPLT else "setne"
@@ -649,6 +629,8 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"movsd [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f64(src)}"]),
 
+  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.bool, src=(UPat(name="src"),), allow_any_len=True),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int64, src=(UPat(name="src"),), allow_any_len=True),

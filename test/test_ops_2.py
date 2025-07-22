@@ -8,7 +8,7 @@ from tinygrad import Tensor, Device, dtypes
 from tinygrad.tensor import _to_np_dtype
 from tinygrad.device import is_dtype_supported
 
-if getenv("TINY_BACKEND", "1"):
+if getenv("TINY_BACKEND", "0"):
   import tinygrad.frontend.torch # noqa: F401 # pylint: disable=unused-import
   torch.set_default_device("tiny")
 
@@ -339,7 +339,10 @@ class TestOps(unittest.TestCase):
     ten0, ten1 = Tensor(data[0], dtype=dtypes.bool), Tensor(data[1], dtype=dtypes.bool)
     helper_test_op([], lambda: tor0&tor1, lambda: ten0&ten1, forward_only=True)
 
-    #helper_test_op(None, lambda x: (1 < x) & (x < 2), forward_only=True, vals=[[1.2, 1.2, 1.2, 3.2]])
+    helper_test_op(None, lambda x: (1 < x) & (x < 2), forward_only=True, vals=[[1.2, 1.2, 1.2, 3.2]])
+  def test_all(self):
+    helper_test_op([(3,4,5,6)], lambda x: x.all(), forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[True, True]], forward_only=True)
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
