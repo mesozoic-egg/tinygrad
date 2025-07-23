@@ -1474,7 +1474,7 @@ class TestAllocatorAssignReg(unittest.TestCase):
     self._test_assign_occupied(dtypes.int, IReg(0), IReg(1), ret)
 
   def test_assign_occupied_freg(self):
-    ret = [f"movss xmm0, xmm1"] if Arch.x86 else [f"fmov d0, d1"]
+    ret = [f"movq xmm0, xmm1"] if Arch.x86 else [f"fmov d0, d1"]
     self._test_assign_occupied(dtypes.float, FReg(0), FReg(1), ret)
 
   def _unassigned_var_spill_reg(self, dtype: DType, reg: RegBase, stack: int, k: list[str]):
@@ -1544,13 +1544,13 @@ class TestAllocatorAssignReg(unittest.TestCase):
     self._assigned_var_spill_reg(dtypes.int64, IReg(0), IReg(1), 8, k)
 
   def test_assigned_var_spill_reg_f32(self):
-    k = ["movss [rbp - 16], xmm0", "movss xmm0, xmm1"] if Arch.x86 else [
+    k = ["movss [rbp - 16], xmm0", "movq xmm0, xmm1"] if Arch.x86 else [
       "str d0, [x29, #-16]", "fmov d0, d1"
       ]
     self._assigned_var_spill_reg(dtypes.float32, FReg(0), FReg(1), 16, k)
 
   def test_assigned_var_spill_reg_f64(self):
-    k = ["movsd [rbp - 16], xmm0", "movsd xmm0, xmm1"] if Arch.x86 else [
+    k = ["movsd [rbp - 16], xmm0", "movq xmm0, xmm1"] if Arch.x86 else [
       "str d0, [x29, #-16]", "fmov d0, d1"
       ]
     self._assigned_var_spill_reg(dtypes.float64, FReg(0), FReg(1), 16, k)
