@@ -108,55 +108,43 @@ class Variable:
     location = f" reg:{self.reg}" if self.reg is not None else f" stack:{self.stack}" if self.stack is not None else ""
     return f"({self.start}-{self.end} reg:{self.reg} stack:{self.stack})"
 
-  def store(self, dst: str) -> list[str]:
+  def store(self, dst: str="") -> list[str]:
     assert self.reg is not None
-    to_stack = dst == "stack"
-    to_mem = dst == "mem"
-    assert to_stack ^ to_mem
-    assert getattr(self, dst) is not None
-    if to_stack:
-      assert self.stack is not None
-      note = f""
-      if Arch.arm:
-        if self.stack > 255:
-          sp = "x30"
-          stack = self.stack - 255
-        else:
-          sp = "x29"
-          stack = self.stack
-        return [f"str {self.reg.render64()}, [{sp}, #-{stack}]"]
+    assert self.stack is not None
+    note = f""
+    if Arch.arm:
+      if self.stack > 255:
+        sp = "x30"
+        stack = self.stack - 255
       else:
-        if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
-          op = "mov"
-        else:
-          op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
-        return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
+        sp = "x29"
+        stack = self.stack
+      return [f"str {self.reg.render64()}, [{sp}, #-{stack}]"]
     else:
-      raise Exception("not implemented")
-
-  def load(self, reg: RegBase, src: str) -> list[str]:
-    assert self.reg is None
-    from_stack = src == "stack"
-    from_mem = src == "mem"
-    assert from_stack ^ from_mem
-    self.reg = reg
-    if from_stack:
-      assert self.stack is not None
-      if Arch.arm:
-        if self.stack > 255:
-          sp = "x30"
-          stack = self.stack - 255
-        else:
-          sp = "x29"
-          stack = self.stack
-        return [f"ldr {reg.render64()}, [{sp}, #-{stack}]"]
+      if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
+        op = "mov"
       else:
-        if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
-          op = "mov"
-        else:
-          op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
-        return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
-    else: raise Exception("not implemented")
+        op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
+      return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
+
+  def load(self, reg: RegBase, src: str="") -> list[str]:
+    assert self.reg is None
+    self.reg = reg
+    assert self.stack is not None
+    if Arch.arm:
+      if self.stack > 255:
+        sp = "x30"
+        stack = self.stack - 255
+      else:
+        sp = "x29"
+        stack = self.stack
+      return [f"ldr {reg.render64()}, [{sp}, #-{stack}]"]
+    else:
+      if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
+        op = "mov"
+      else:
+        op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
+      return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
 
   def copy(self, dst: RegBase) -> list[str]:
     assert self.reg is not None
@@ -171,8 +159,6 @@ class Variable:
       else:
         op = "movq"
     return [f"{op} {dst.render64()}, {self.reg.render64()}"]
-
-
 
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int = 0):
@@ -322,6 +308,41 @@ class Allocator:
       if count == 0:
         pool = self.pools[type(reg)]
         pool.insert(0, reg)
+
+x86_params_mapping: dict[int, int] = {
+  0: 7, #R7 (rdi)
+  1: 6, #R6 (rsi)
+  2: 2, #R2 (rdx)
+  3: 1, #R1 (rcx)
+  4: 8, #R8
+  5: 9, #R9 
+}
+class Allocator2:
+  def __init__(self, num_ireg: int, num_freg: int):
+    self.pools: dict[type[RegBase], list[RegBase]] = {
+      IReg: [IReg(i) for i in range(num_ireg)],
+      FReg: [FReg(i) for i in range(num_freg)],
+    }
+    self.uops: dict[UOp, Variable] = {}
+    self.stack_size = 0
+    self.index = 0
+    self.kernel: list[str] = []
+    self.reserved: set[RegBase] = set()
+    self.blocked: set[RegBase] = set()
+  def assign(self, uops: list[UOp], reg_type: type[RegBase]):
+    pass
+  def alloc(self, reg_type: type[RegBase]):
+    pass
+  def spill(self, reg: RegBase):
+    pool = self.pools[type(reg)]
+    # figure out which var is holding onto this reg
+    vars: list[Variable] = []
+    if len(vars):
+      for var in vars:
+        var.store("stack")
+    
+    
+
   
 def stack_all(a: Allocator):
   for u, var in a.uops.items():
