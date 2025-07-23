@@ -182,7 +182,7 @@ class Allocator:
     }
     self.kernel: list[str] = []
     self.i: int = 0
-    self.do_not_use: list[RegBase] = [IReg(4)]
+    self.blocked: list[RegBase] = [IReg(4)]
 
   def __getitem__(self, _key: UOp) -> RegBase:
     return self.assign(_key)
@@ -202,7 +202,7 @@ class Allocator:
     if reg_type is not None:
       pool = self.pools[reg_type]
       if len(pool):
-        while (reg:=pool.pop(0)) in self.do_not_use: pass
+        while (reg:=pool.pop(0)) in self.blocked: pass
         return reg, []
       else:
         vars_in_regs = []
