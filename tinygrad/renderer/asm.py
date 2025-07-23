@@ -329,21 +329,90 @@ class Allocator2:
     self.kernel: list[str] = []
     self.reserved: set[RegBase] = set()
     self.blocked: set[RegBase] = set()
-  def assign(self, uops: list[UOp], reg_type: type[RegBase]):
+  def assign(self, uop: UOp, reg_type: type[RegBase], excludes: list[RegBase]=[]) -> RegBase:
+    var = self.uops[uop]
+    if var.reg is not None: return var.reg
+    reg = self.alloc(reg_type, excludes)
+    if var.stack is not None:
+      self.kernel.extend(var.load(reg))
+    var.reg = reg
+    return reg
+  def assign_multiple(self, uops: list[UOp], reg_type: type[RegBase], excludes: list[RegBase]=[]):
     pass
-  def alloc(self, reg_type: type[RegBase]):
-    pass
-  def spill(self, reg: RegBase):
-    pool = self.pools[type(reg)]
-    # figure out which var is holding onto this reg
-    vars: list[Variable] = []
-    if len(vars):
-      for var in vars:
-        var.store("stack")
-    
-    
+  def alloc_multiple(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]):
+    pool = self.pools[reg_type]
+    regs = []
+    if len(pool):
+      idx, count = 0, 0
+      while idx < len(pool) and count < num:
+        _reg = pool[idx]
+        if _reg not in self.blocked and _reg not in excludes and _reg not in self.reserved:
+          regs.append(pool.pop(idx))
+          count += 1
+        else:
+          idx += 1
+    if len(regs) == num:
+      return regs
+    num_to_spill = num - len(regs)
+    candidates = self._find_spill_candidates(num_to_spill, reg_type, excludes)
+    for uop, var in candidates:
+      reg = var.reg
+      assert reg is not None
+      self._spill(reg)
+      regs.append(reg)
+    return regs
 
-  
+  def alloc(self, reg_type: type[RegBase], excludes: list[RegBase]=[]) -> RegBase:
+    pool = self.pools[reg_type]
+    if len(pool):
+      reg = None
+      for _reg in pool:
+        if _reg not in self.blocked and _reg not in excludes and _reg not in self.reserved:
+          reg = _reg
+      assert reg is not None
+    else:
+      candidates = self._find_spill_candidates(1, reg_type, excludes)
+      assert len(candidates) == 1
+      uop, var = candidates[0]
+      reg = var.reg
+      assert reg is not None
+      self._spill(reg)
+    return reg  
+  def alloc_reg(self, reg: RegBase) -> None:
+    if reg not in self.pools[type(reg)]:
+      self._spill(reg)
+  def assign_reg(self, reg: RegBase, uop: UOp) -> None:
+    var = self.uops[uop]
+    self.alloc_reg(reg)
+    if var.reg is not None:
+      self.kernel.extend(var.copy(reg))
+    var.reg = reg
+  def _spill(self, reg: RegBase) -> None:
+    pool = self.pools[type(reg)]
+    vars = self._find_vars_holding_reg(reg)
+    for var in vars:
+      self.kernel.extend(var.store())
+      var.reg = None
+  def _find_vars_holding_reg(self, reg: RegBase) -> list[Variable]:
+    vars: list[Variable] = []
+    for v in self.uops.values():
+      if v.reg == reg: vars.append(v)
+    return vars
+  def _find_spill_candidates(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]=[]):
+    candidates: list[tuple[UOp, Variable]] = []
+    for u, v in self.uops.items():
+      if v.reg is not None:
+        candidates.append((u, v))
+    candidates = [(u,v) for u, v in candidates if type(v.reg) == reg_type]
+    candidates = [(u,v) for u, v in candidates if v.reg not in self.reserved]
+    candidates = [(u,v) for u, v in candidates if v.reg not in self.blocked]
+    candidates = [(u,v) for u, v in candidates if v.reg not in excludes]
+    assert len(candidates), "no candidates left"
+    candidates = sorted(candidates, key=lambda u_v: u_v[1].end, reverse=True)
+    assert len(candidates) >= num, "Not enough registers to fulfill spill"
+    candidates = candidates[:num]
+    return candidates
+
 def stack_all(a: Allocator):
   for u, var in a.uops.items():
     # Previously was also checking var.stack and missed updated value
