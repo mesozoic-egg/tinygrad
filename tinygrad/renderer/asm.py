@@ -168,11 +168,6 @@ class Variable:
     else:
       if isinstance(self.reg, IReg) and isinstance(dst, IReg):
         op = "mov"
-      elif isinstance(self.reg, FReg) and isinstance(dst, FReg):
-        if self.uop.dtype.itemsize == 4:
-          op = "movss"
-        else:
-          op = "movsd"
       else:
         op = "movq"
     return [f"{op} {dst.render64()}, {self.reg.render64()}"]
@@ -538,8 +533,11 @@ def float_cmp(ctx, x, a, b):
   exclude_dst = [x] if reg_type == IReg else []
   src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
   src_b = ctx.r.assign(b, excludes=[a] + exclude_dst, reg_type=reg_type)
-  temp_reg, kernel = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type)
+  temp_reg, _ = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type)
+  temp_reg_2, _ = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=IReg)
+  assert temp_reg != temp_reg_2
   ctx.r.return_reg(temp_reg)
+  ctx.r.return_reg(temp_reg_2)
   if Arch.arm:
     size = a.dtype.itemsize
     if reg_type == IReg: op = "cmp"
@@ -555,15 +553,27 @@ def float_cmp(ctx, x, a, b):
       cmp_op = "cmp"
       set_op = "setl" if x.op is Ops.CMPLT else "setne"
     else:
-      cmp_op = "comiss" if a.dtype.itemsize == 4 else "comisd"
+      cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
       mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
       set_op = "setb" if x.op is Ops.CMPLT else "setne"
-    return [
-      f"xor {dst}, {dst}",
-      f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
-      f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-      f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
-    ]
+    if set_op == "setne" and reg_type == FReg:
+      return [
+        f"xor {temp_reg_2}, {temp_reg_2}",
+        f"xor {dst}, {dst}",
+        f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+        f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+        f"setp {temp_reg_2.render8()}",
+        f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
+        f"or {dst}, {temp_reg_2}",
+      ]
+    else:
+      return [
+        f"xor {dst}, {dst}",
+        f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+        f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+        f"setp {temp_reg_2.render8()}",
+        f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
+      ]
 
 def _where(ctx, x):
   if dtypes.is_int(x.dtype): reg_type = IReg
@@ -873,8 +883,10 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/abs/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/acosh/kernel.s", "wt") as f: f.write(ret)
     return ret
+
+#TESTS
 
 class Tests(unittest.TestCase):
   def test_to_hex(self):
