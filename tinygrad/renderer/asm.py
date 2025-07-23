@@ -192,9 +192,6 @@ class Allocator:
     self.kernel = []
     return ret
 
-  def extend_kernel(self, l: list[str]):
-    self.kernel.extend(l)
-
   def alloc(self, excludes: list[UOp]=[], reg_type: Optional[type[RegBase]]=None,
             exclude_regs: list[RegBase]=[],
             debug:bool=False
@@ -243,7 +240,7 @@ class Allocator:
       self.stack_size += (v.reg.size // 8)
       v.stack = self.stack_size
     k = v.store("stack")
-    self.extend_kernel(k)
+    self.kernel.extend(k)
 
   def assign(self, _key: UOp, excludes: list[UOp]=[], reserve: bool=False,
              reg_type: Optional[type[RegBase]]=IReg,
@@ -261,7 +258,7 @@ class Allocator:
       return var.reg
     reg, kernel = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
-      self.extend_kernel(var.load(reg, "stack"))
+      self.kernel.extend(var.load(reg, "stack"))
     if reserve: self.reserved[_key] = 1
     var.reg = reg
     assert var.reg is not None
@@ -280,7 +277,7 @@ class Allocator:
     pool = self.pools[type(reg)]
     var = self.uops[_key]
     if reg in pool:
-      if var.reg is not None: self.extend_kernel(var.copy(reg))
+      if var.reg is not None: self.kernel.extend(var.copy(reg))
       var.reg = reg
       pool.pop(pool.index(reg))
     else:
@@ -289,7 +286,7 @@ class Allocator:
       var2 = vars[0]
       self.save_var_to_stack(var2)
       var2.reg = None
-      if var.reg is not None: self.extend_kernel(var.copy(reg))
+      if var.reg is not None: self.kernel.extend(var.copy(reg))
       var.reg = reg
   
   def release(self, uop: UOp): del self.reserved[uop] 
