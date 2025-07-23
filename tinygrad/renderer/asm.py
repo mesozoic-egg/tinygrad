@@ -192,7 +192,7 @@ class Allocator:
     self.kernel = []
     return ret
 
-  def alloc(self, excludes: list[UOp]=[], reg_type: Optional[type[RegBase]]=None,
+  def alloc(self, excludes: list[RegBase]=[], reg_type: Optional[type[RegBase]]=None,
             exclude_regs: list[RegBase]=[],
             debug:bool=False
             ) -> tuple[RegBase, list[str]]:
@@ -204,7 +204,7 @@ class Allocator:
       else:
         vars_in_regs = []
         for u, var in self.uops.items():
-          if var.reg is not None and u not in excludes and u not in self.reserved \
+          if var.reg is not None and var.reg not in excludes and u not in self.reserved \
             and isinstance(var.reg, reg_type):
             vars_in_regs.append(var)
         if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
@@ -242,7 +242,7 @@ class Allocator:
     k = v.store("stack")
     self.kernel.extend(k)
 
-  def assign(self, _key: UOp, excludes: list[UOp]=[], reserve: bool=False,
+  def assign(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool=False,
              reg_type: Optional[type[RegBase]]=IReg,
              debug:bool=False,
              ) -> RegBase:
@@ -263,15 +263,15 @@ class Allocator:
     var.reg = reg
     assert var.reg is not None
     return reg
-  def assign_i8(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+  def assign_i8(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render8()
-  def assign_i32(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+  def assign_i32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render32()
-  def assign_i64(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+  def assign_i64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=IReg).render64()
-  def assign_f32(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+  def assign_f32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=FReg).render32()
-  def assign_f64(self, _key: UOp, excludes: list[UOp]=[], reserve: bool = False):
+  def assign_f64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, excludes, reserve, reg_type=FReg).render64()
   def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False):
     pool = self.pools[type(reg)]
@@ -470,16 +470,16 @@ def alu(ctx, x):
   dtype = x.src[0].dtype
   reg_type = IReg if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else FReg
   src_regs = []
-  excludes = []
+  excludes: List[RegBase] = []
   for _src in x.src:
     _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
-    excludes.append(_src)
+    excludes.append(_reg)
     src_regs.append(_reg)
   if ctx.r.uops[x.src[0]].end == ctx.r.i:
     ctx.r.share(x, x.src[0])
     dst = src_regs[0]
   else:
-    dst = ctx.r.assign(x, excludes=list(x.src), reg_type=reg_type)
+    dst = ctx.r.assign(x, excludes=excludes, reg_type=reg_type)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   _dst = dst.render(dtype.itemsize)
   src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
@@ -562,9 +562,11 @@ def endrange(ctx, x):
 
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
-  src0_str = ctx.r.assign(src0, reg_type=IReg).render64()
-  src1_str = ctx.r.assign(src1, excludes=[src0], reg_type=IReg).render64()
-  reg = ctx.r.assign(x, excludes=[src0, src1], reg_type=IReg).render64()
+  src0_reg = ctx.r.assign(src0, reg_type=IReg)
+  src0_str = src0_reg.render64()
+  src1_reg = ctx.r.assign(src1, excludes=[src0_reg], reg_type=IReg)
+  src1_str = src1_reg.render64()
+  reg = ctx.r.assign(x, excludes=[src0_reg, src1_reg], reg_type=IReg).render64()
   multiplier = src0.dtype.itemsize
   lsl = int(math.log2(multiplier))
   if Arch.arm:
@@ -575,7 +577,8 @@ def _index(ctx, x):
 def assign(ctx, x):
   reg_type = IReg if dtypes.is_int(x.src[0].dtype) or dtypes.is_bool(x.src[0].dtype) else FReg
   dst = ctx.r.assign(x, reg_type=reg_type)
-  src = ctx.r.assign(x.src[1], excludes=[x.src[0]], reg_type=reg_type)
+  x_src_0_reg = ctx.r.uops[x.src[0]].reg
+  src = ctx.r.assign(x.src[1], excludes=[x_src_0_reg], reg_type=reg_type)
   opcode = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   ctx.r.uops[x].stack = ctx.r.uops[x.src[0]].stack
   return [f"{opcode} {dst}, {src}"]
@@ -586,9 +589,9 @@ def to_bool(ctx, x, a):
   else:
     reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
-  exclude_dst_reg = [x] if reg_type == IReg else []
+  exclude_dst_reg = [dst] if reg_type == IReg else []
   src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
-  temp_reg, _ = ctx.r.alloc(excludes=[a]+exclude_dst_reg, reg_type=reg_type)
+  temp_reg, _ = ctx.r.alloc(excludes=[src]+exclude_dst_reg, reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
     if dtypes.is_int(a.dtype):
@@ -617,11 +620,11 @@ def float_cmp(ctx, x, a, b):
   if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype): reg_type = IReg
   else: reg_type = FReg
   dst = ctx.r.assign(x, reg_type=IReg)
-  exclude_dst = [x] if reg_type == IReg else []
+  exclude_dst = [dst] if reg_type == IReg else []
   src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
-  src_b = ctx.r.assign(b, excludes=[a] + exclude_dst, reg_type=reg_type)
-  temp_reg, _ = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=reg_type)
-  temp_reg_2, _ = ctx.r.alloc(excludes=[a, b]+exclude_dst, reg_type=IReg)
+  src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
+  temp_reg, _ = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=reg_type)
+  temp_reg_2, _ = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=IReg)
   assert temp_reg != temp_reg_2
   ctx.r.return_reg(temp_reg)
   ctx.r.return_reg(temp_reg_2)
@@ -1169,9 +1172,9 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
   def test_exclude(self):
     self.a = Allocator(2)
     self._setup()
-    self.a.assign(self.uop1)
-    self.a.assign(self.uop2)
-    self.a.assign(self.uop3, excludes=[self.uop2])
+    reg1 = self.a.assign(self.uop1)
+    reg2 = self.a.assign(self.uop2)
+    reg3 = self.a.assign(self.uop3, excludes=[reg2])
     assert self.var1.reg is None and self.var1.stack == 8
     assert self.var2.reg == IReg(1)
     assert self.var3.reg == IReg(0)
@@ -1183,9 +1186,9 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
   def test_exclude_not_enough_reg_raise(self):
     self.a = Allocator(1)
     self._setup()
-    self.a.assign(self.uop2)
+    reg2 = self.a.assign(self.uop2)
     with self.assertRaises(Exception):
-      self.a.assign(self.uop3, excludes=[self.uop2])
+      self.a.assign(self.uop3, excludes=[reg2])
   def test_reserve(self):
     self.a = Allocator(2)
     self._setup()
@@ -1213,8 +1216,8 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
     self.a.assign(self.uop1, reserve=True)
     self.a.assign(self.uop2, reserve=True)
     with self.assertRaises(Exception):
-      self.a.assign(self.uop3)
-      self.a.assign(self.uop4, excludes=[self.uop3])
+      reg3 = self.a.assign(self.uop3)
+      self.a.assign(self.uop4, excludes=[reg3])
 
 class TestAllocatorAluShareReg(unittest.TestCase):
   def test_add_no_share(self):
