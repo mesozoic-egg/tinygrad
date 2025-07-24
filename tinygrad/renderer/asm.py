@@ -169,7 +169,7 @@ x86_params: dict[int, int] = {
   5: 9, #R9 
 }
 class Allocator:
-  def __init__(self, num_ireg: int, num_freg: int = 0):
+  def __init__(self, num_ireg: int, num_freg: int):
     self.pools: dict[type[RegBase], list[RegBase]] = {
       IReg: [IReg(i) for i in range(num_ireg)],
       FReg: [FReg(i) for i in range(num_freg)]
@@ -180,7 +180,6 @@ class Allocator:
     self.stack_size = 0
     self.cur_step = 0
     self.kernel: list[str] = []
-
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel
@@ -762,9 +761,6 @@ class AsmRenderer(Renderer):
     self.x86 = arch == "x86_64"
     assert self.arm ^ self.x86
 
-  def __getitem__(self, key: UOp):
-    return self.r[key]
-
   def render(self, uops:List[UOp]) -> str:
     gen_regs = [f"x{i}" for i in range(0, 31)]
     float_regs = [f"D{i}" for i in range(0,32)]
@@ -885,7 +881,7 @@ class Tests(unittest.TestCase):
 
 class TestAllocatorExpire(unittest.TestCase):
   def setUp(self):
-    self.a = Allocator(16)
+    self.a = Allocator(16, 0)
     uop1 = UOp(Ops.CONST, arg=1)
     uop2 = UOp(Ops.CONST, arg=2)
     self.uop1, self.uop2 = uop1, uop2
@@ -920,7 +916,7 @@ class TestAllocatorExpire(unittest.TestCase):
 
 class TestAllocatorShare(unittest.TestCase):
   def setUp(self):
-    self.a = Allocator(16)
+    self.a = Allocator(16, 0)
     uop1 = UOp(Ops.CONST, arg=1)
     uop2 = UOp(Ops.CONST, arg=2)
     self.uop1, self.uop2 = uop1, uop2
@@ -945,7 +941,7 @@ class TestAllocatorShare(unittest.TestCase):
 
 class TestAllocatorSpill(unittest.TestCase):
   def setUp(self):
-    self.a = Allocator(2)
+    self.a = Allocator(2, 0)
     uop1 = UOp(Ops.CONST, arg=1)
     uop2 = UOp(Ops.CONST, arg=2)
     uop3 = UOp(Ops.CONST, arg=3)
@@ -1039,7 +1035,7 @@ class TestAllocatorStackAll(unittest.TestCase):
   be saved in stack
   """
   def setUp(self):
-    self.a = Allocator(16)
+    self.a = Allocator(16, 0)
     uop1 = UOp(Ops.RANGE)
     self.uop1 = uop1
     var = Variable(uop1, 0, 10)
@@ -1070,7 +1066,7 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
     self.a.uops[self.uop3] = self.var3
     self.a.uops[self.uop4] = self.var4
   def test_exclude(self):
-    self.a = Allocator(2)
+    self.a = Allocator(2, 0)
     self._setup()
     reg1 = self.a.assign(self.uop1)
     reg2 = self.a.assign(self.uop2)
@@ -1079,39 +1075,39 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
     assert self.var2.reg == IReg(1)
     assert self.var3.reg == IReg(0)
   def test_exclude_not_enough_reg(self):
-    self.a = Allocator(1)
+    self.a = Allocator(1, 0)
     self._setup()
     self.a.assign(self.uop2)
     self.a.assign(self.uop3)
   def test_exclude_not_enough_reg_raise(self):
-    self.a = Allocator(1)
+    self.a = Allocator(1, 0)
     self._setup()
     reg2 = self.a.assign(self.uop2)
     with self.assertRaises(Exception):
       self.a.assign(self.uop3, excludes=[reg2])
   def test_reserve(self):
-    self.a = Allocator(2)
+    self.a = Allocator(2, 0)
     self._setup()
     self.a.assign(self.uop1)
     self.a.assign(self.uop2, reserve=True)
     self.a.assign(self.uop3)
     assert self.var3.reg == IReg(0)
   def test_reserve_not_enough_reg(self):
-    self.a = Allocator(2)
+    self.a = Allocator(2, 0)
     self._setup()
     self.a.assign(self.uop1, reserve=True)
     self.a.assign(self.uop2, reserve=True)
     with self.assertRaises(Exception):
       self.a.assign(self.uop3)
   def test_reserve_release(self):
-    self.a = Allocator(2)
+    self.a = Allocator(2, 0)
     self._setup()
     self.a.assign(self.uop1, reserve=True)
     reg2 = self.a.assign(self.uop2, reserve=True)
     self.a.release(reg2)
     self.a.assign(self.uop3)
   def test_reserve_not_enough_reg_pair(self):
-    self.a = Allocator(3)
+    self.a = Allocator(3, 0)
     self._setup()
     self.a.assign(self.uop1, reserve=True)
     self.a.assign(self.uop2, reserve=True)
