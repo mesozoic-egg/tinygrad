@@ -202,17 +202,11 @@ class Allocator:
         reg = pool.pop(i)
         return reg
     vars_in_regs = []
-    for u, var in self.uops.items():
-      if var.reg is not None and var.reg not in excludes and var.reg not in self.reserved \
-        and isinstance(var.reg, reg_type):
-        vars_in_regs.append(var)
-    if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
-    if debug:
-      print(f"{vars_in_regs=}")
-    sorted_vars = sorted(vars_in_regs, key=lambda i: i.end, reverse=True)
-    last_ending_var, *_ = sorted_vars
-    self.move_var_to_stack(last_ending_var)
-    reg = self.pools[reg_type].pop(0)
+    candidates = self._find_spill_candidates(1, reg_type, excludes)
+    u, var = candidates[0]
+    reg = var.reg
+    assert reg is not None
+    self._spill(reg)
     return reg
 
   def share(self, dst: UOp, src: UOp):
@@ -308,6 +302,10 @@ class Allocator:
     pool = self.pools[type(reg)]
     vars = self._find_vars_holding_reg(reg)
     for var in vars:
+      assert var.reg is not None
+      if var.stack is None:
+        self.stack_size += (var.reg.size // 8)
+        var.stack = self.stack_size
       self.kernel.extend(var.store())
       var.reg = None
   def _find_spill_candidates(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]=[]):
