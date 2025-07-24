@@ -223,16 +223,8 @@ class Allocator:
     assert reg
     self.return_reg(reg)
     assert reg is not None
-    ret = self.save_var_to_stack(v)
+    self._spill(reg)
     v.reg = None
-
-  def save_var_to_stack(self, v: Variable):
-    assert v.reg is not None
-    if v.stack is None:
-      self.stack_size += (v.reg.size // 8)
-      v.stack = self.stack_size
-    k = v.store("stack")
-    self.kernel.extend(k)
 
   def assign(self, _key: UOp,
              reg_type: type[RegBase],
