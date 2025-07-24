@@ -167,10 +167,10 @@ class Allocator:
       FReg: [FReg(i) for i in range(num_freg)]
     }
     self.uops: dict[UOp, Variable] = {}
-    self.variables: list[Variable] = []
+    self.reserved: dict[RegBase, int] = {}
+    self.blocked: list[RegBase] = [IReg(4)]
     self.stack_size = 0
     self.cur_step = 0
-    self.reserved: dict[RegBase, int] = {}
     self.x86_params: dict[int, int] = {
       0: 7, #R7 (rdi)
       1: 6, #R6 (rsi)
@@ -180,7 +180,6 @@ class Allocator:
       5: 9, #R9 
     }
     self.kernel: list[str] = []
-    self.blocked: list[RegBase] = [IReg(4)]
 
   def __getitem__(self, _key: UOp) -> RegBase:
     return self.assign(_key)
