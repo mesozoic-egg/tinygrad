@@ -171,7 +171,7 @@ class Allocator:
     self.stack_size = 0
     self.uops: dict[UOp, Variable] = {}
     self.index = 0
-    self.reserved: dict[UOp, int] = {}
+    self.reserved: dict[RegBase, int] = {}
     self.x86_params: dict[int, int] = {
       0: 7, #R7 (rdi)
       1: 6, #R6 (rsi)
@@ -204,7 +204,7 @@ class Allocator:
       else:
         vars_in_regs = []
         for u, var in self.uops.items():
-          if var.reg is not None and var.reg not in excludes and u not in self.reserved \
+          if var.reg is not None and var.reg not in excludes and var.reg not in self.reserved \
             and isinstance(var.reg, reg_type):
             vars_in_regs.append(var)
         if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
@@ -259,7 +259,7 @@ class Allocator:
     reg, kernel = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
       self.kernel.extend(var.load(reg, "stack"))
-    if reserve: self.reserved[_key] = 1
+    if reserve: self.reserved[reg] = 1
     var.reg = reg
     assert var.reg is not None
     return reg
@@ -289,7 +289,7 @@ class Allocator:
       if var.reg is not None: self.kernel.extend(var.copy(reg))
       var.reg = reg
   
-  def release(self, uop: UOp): del self.reserved[uop] 
+  def release(self, reg: RegBase): del self.reserved[reg] 
 
   def free_expired(self, i: int):
     expired: list[UOp] = []
@@ -300,11 +300,12 @@ class Allocator:
       if var.reg and var.end < i: assigned_regs[var.reg] -= 1
     for uop in expired:
       del self.uops[uop]
-      if self.reserved.get(uop): self.release(uop)
     for reg, count in assigned_regs.items():
       if count == 0:
         pool = self.pools[type(reg)]
         pool.insert(0, reg)
+        if self.reserved.get(reg):
+          del self.reserved[reg]
 
 x86_params_mapping: dict[int, int] = {
   0: 7, #R7 (rdi)
@@ -314,106 +315,11 @@ x86_params_mapping: dict[int, int] = {
   4: 8, #R8
   5: 9, #R9 
 }
-class Allocator2:
-  def __init__(self, num_ireg: int, num_freg: int):
-    self.pools: dict[type[RegBase], list[RegBase]] = {
-      IReg: [IReg(i) for i in range(num_ireg)],
-      FReg: [FReg(i) for i in range(num_freg)],
-    }
-    self.uops: dict[UOp, Variable] = {}
-    self.stack_size = 0
-    self.index = 0
-    self.kernel: list[str] = []
-    self.reserved: set[RegBase] = set()
-    self.blocked: set[RegBase] = set()
-  def assign(self, uop: UOp, reg_type: type[RegBase], excludes: list[RegBase]=[]) -> RegBase:
-    var = self.uops[uop]
-    if var.reg is not None: return var.reg
-    reg = self.alloc(reg_type, excludes)
-    if var.stack is not None:
-      self.kernel.extend(var.load(reg))
-    var.reg = reg
-    return reg
-  def assign_multiple(self, uops: list[UOp], reg_type: type[RegBase], excludes: list[RegBase]=[]):
-    pass
-  def alloc_multiple(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]):
-    pool = self.pools[reg_type]
-    regs = []
-    if len(pool):
-      idx, count = 0, 0
-      while idx < len(pool) and count < num:
-        _reg = pool[idx]
-        if _reg not in self.blocked and _reg not in excludes and _reg not in self.reserved:
-          regs.append(pool.pop(idx))
-          count += 1
-        else:
-          idx += 1
-    if len(regs) == num:
-      return regs
-    num_to_spill = num - len(regs)
-    candidates = self._find_spill_candidates(num_to_spill, reg_type, excludes)
-    for uop, var in candidates:
-      reg = var.reg
-      assert reg is not None
-      self._spill(reg)
-      regs.append(reg)
-    return regs
-
-  def alloc(self, reg_type: type[RegBase], excludes: list[RegBase]=[]) -> RegBase:
-    pool = self.pools[reg_type]
-    if len(pool):
-      reg = None
-      for _reg in pool:
-        if _reg not in self.blocked and _reg not in excludes and _reg not in self.reserved:
-          reg = _reg
-      assert reg is not None
-    else:
-      candidates = self._find_spill_candidates(1, reg_type, excludes)
-      assert len(candidates) == 1
-      uop, var = candidates[0]
-      reg = var.reg
-      assert reg is not None
-      self._spill(reg)
-    return reg  
-  def alloc_reg(self, reg: RegBase) -> None:
-    if reg not in self.pools[type(reg)]:
-      self._spill(reg)
-  def assign_reg(self, reg: RegBase, uop: UOp) -> None:
-    var = self.uops[uop]
-    self.alloc_reg(reg)
-    if var.reg is not None:
-      self.kernel.extend(var.copy(reg))
-    var.reg = reg
-  def _spill(self, reg: RegBase) -> None:
-    pool = self.pools[type(reg)]
-    vars = self._find_vars_holding_reg(reg)
-    for var in vars:
-      self.kernel.extend(var.store())
-      var.reg = None
-  def _find_vars_holding_reg(self, reg: RegBase) -> list[Variable]:
-    vars: list[Variable] = []
-    for v in self.uops.values():
-      if v.reg == reg: vars.append(v)
-    return vars
-  def _find_spill_candidates(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]=[]):
-    candidates: list[tuple[UOp, Variable]] = []
-    for u, v in self.uops.items():
-      if v.reg is not None:
-        candidates.append((u, v))
-    candidates = [(u,v) for u, v in candidates if type(v.reg) == reg_type]
-    candidates = [(u,v) for u, v in candidates if v.reg not in self.reserved]
-    candidates = [(u,v) for u, v in candidates if v.reg not in self.blocked]
-    candidates = [(u,v) for u, v in candidates if v.reg not in excludes]
-    assert len(candidates), "no candidates left"
-    candidates = sorted(candidates, key=lambda u_v: u_v[1].end, reverse=True)
-    assert len(candidates) >= num, "Not enough registers to fulfill spill"
-    candidates = candidates[:num]
-    return candidates
 
 def stack_all(a: Allocator):
   for u, var in a.uops.items():
     # Previously was also checking var.stack and missed updated value
-    if var.reg is not None and u not in a.reserved:
+    if var.reg is not None and var.reg not in a.reserved:
       a.move_var_to_stack(var)
 
 def float32_to_hex(f: float) -> str:
@@ -546,7 +452,6 @@ def endrange(ctx, x):
   acc, end = x.src[0], x.src[0].src[0]
   stack_all(ctx.r)
   acc_reg = ctx.r.assign_i64(acc)
-  ctx.r.release(x.src[0])
   if Arch.arm:
     return [
       f"add {acc_reg}, {acc_reg}, #1",
@@ -1207,8 +1112,8 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
     self.a = Allocator(2)
     self._setup()
     self.a.assign(self.uop1, reserve=True)
-    self.a.assign(self.uop2, reserve=True)
-    self.a.release(self.uop2)
+    reg2 = self.a.assign(self.uop2, reserve=True)
+    self.a.release(reg2)
     self.a.assign(self.uop3)
   def test_reserve_not_enough_reg_pair(self):
     self.a = Allocator(3)
