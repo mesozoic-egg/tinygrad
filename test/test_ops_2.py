@@ -154,8 +154,8 @@ class TestOps(unittest.TestCase):
     helper_test_op([(45,65)], lambda x: x.acos(), low=-1, high=1)
   def test_acos_large(self):
     helper_test_op([(20,)], lambda x: x.acos(), low=-300, high=-297)
-    #helper_test_op([(45,65)], lambda x: x.acos(), low=-300, high=-297)
-    #helper_test_op([(45,65)], lambda x: x.acos(), low=300, high=303)
+    helper_test_op([(45,65)], lambda x: x.acos(), low=-300, high=-297)
+    helper_test_op([(45,65)], lambda x: x.acos(), low=300, high=303)
 
   def test_sum(self):
     np_ret = np.ones((16, 16)).sum(axis=1)
