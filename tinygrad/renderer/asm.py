@@ -189,12 +189,12 @@ class Allocator:
   def alloc(self, excludes: list[RegBase]=[], reg_type: Optional[type[RegBase]]=None,
             exclude_regs: list[RegBase]=[],
             debug:bool=False
-            ) -> tuple[RegBase, list[str]]:
+            ) -> RegBase:
     if reg_type is not None:
       pool = self.pools[reg_type]
       if len(pool):
         while (reg:=pool.pop(0)) in self.blocked: pass
-        return reg, []
+        return reg
       else:
         vars_in_regs = []
         for u, var in self.uops.items():
@@ -208,7 +208,7 @@ class Allocator:
         last_ending_var, *_ = sorted_vars
         self.move_var_to_stack(last_ending_var)
         reg = self.pools[reg_type].pop(0)
-        return reg, []
+        return reg
     else: raise Exception("Dead branch")
 
   def share(self, dst: UOp, src: UOp):
@@ -250,7 +250,7 @@ class Allocator:
     var = self.uops[_key]
     if var.reg is not None:
       return var.reg
-    reg, kernel = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
+    reg = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
       self.kernel.extend(var.load(reg, "stack"))
     if reserve: self.reserved[reg] = 1
@@ -300,6 +300,31 @@ class Allocator:
         pool.insert(0, reg)
         if self.reserved.get(reg):
           del self.reserved[reg]
+  def _spill(self, reg: RegBase) -> None:
+    pool = self.pools[type(reg)]
+    vars = self._find_vars_holding_reg(reg)
+    for var in vars:
+      self.kernel.extend(var.store())
+      var.reg = None
+  def _find_spill_candidates(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]=[]):
+    candidates: list[tuple[UOp, Variable]] = []
+    for u, v in self.uops.items():
+      if v.reg is not None:
+        candidates.append((u, v))
+    candidates = [(u,v) for u, v in candidates if type(v.reg) == reg_type]
+    candidates = [(u,v) for u, v in candidates if v.reg not in self.reserved]
+    candidates = [(u,v) for u, v in candidates if v.reg not in self.blocked]
+    candidates = [(u,v) for u, v in candidates if v.reg not in excludes]
+    assert len(candidates), "no candidates left"
+    candidates = sorted(candidates, key=lambda u_v: u_v[1].end, reverse=True)
+    assert len(candidates) >= num, "Not enough registers to fulfill spill"
+    candidates = candidates[:num]
+    return candidates
+  def _find_vars_holding_reg(self, reg: RegBase) -> list[Variable]:
+    vars: list[Variable] = []
+    for v in self.uops.values():
+      if v.reg == reg: vars.append(v)
+    return vars
 
 x86_params_mapping: dict[int, int] = {
   0: 7, #R7 (rdi)
@@ -420,7 +445,7 @@ def const(ctx, x):
     if x.dtype.itemsize == 4: data_type = ".single"
     else: data_type = ".double"
     ctx.mem.append((label, f"{data_type} {x.arg}"))
-    temp_reg, kernel = ctx.r.alloc([reg], IReg)
+    temp_reg = ctx.r.alloc([reg], IReg)
     ctx.r.return_reg(temp_reg)
     return [f"adrp {temp_reg}, {label}",
       f"ldr {reg_str}, [{temp_reg}, #:lo12:{label}]"]
@@ -490,7 +515,7 @@ def to_bool(ctx, x, a):
   dst = ctx.r.assign(x, reg_type=IReg)
   exclude_dst_reg = [dst] if reg_type == IReg else []
   src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
-  temp_reg, _ = ctx.r.alloc(excludes=[src]+exclude_dst_reg, reg_type=reg_type)
+  temp_reg = ctx.r.alloc(excludes=[src]+exclude_dst_reg, reg_type=reg_type)
   ctx.r.return_reg(temp_reg)
   if Arch.arm:
     if dtypes.is_int(a.dtype):
@@ -522,8 +547,8 @@ def float_cmp(ctx, x, a, b):
   exclude_dst = [dst] if reg_type == IReg else []
   src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
   src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
-  temp_reg, _ = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=reg_type)
-  temp_reg_2, _ = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=IReg)
+  temp_reg = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=reg_type)
+  temp_reg_2 = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=IReg)
   assert temp_reg != temp_reg_2
   ctx.r.return_reg(temp_reg)
   ctx.r.return_reg(temp_reg_2)
