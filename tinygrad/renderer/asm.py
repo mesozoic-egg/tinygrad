@@ -186,30 +186,34 @@ class Allocator:
     self.kernel = []
     return ret
 
-  def alloc(self, excludes: list[RegBase]=[], reg_type: Optional[type[RegBase]]=None,
-            exclude_regs: list[RegBase]=[],
+  def alloc(self, reg_type: type[RegBase],
+            excludes: list[RegBase]=[],
             debug:bool=False
             ) -> RegBase:
-    if reg_type is not None:
-      pool = self.pools[reg_type]
-      if len(pool):
-        while (reg:=pool.pop(0)) in self.blocked: pass
+    pool = self.pools[reg_type]
+    if len(pool):
+      reg2 = None
+      i = None
+      for _i, _reg in enumerate(pool):
+        if _reg not in self.blocked:
+          i = _i
+          break
+      if i is not None:
+        reg = pool.pop(i)
         return reg
-      else:
-        vars_in_regs = []
-        for u, var in self.uops.items():
-          if var.reg is not None and var.reg not in excludes and var.reg not in self.reserved \
-            and isinstance(var.reg, reg_type):
-            vars_in_regs.append(var)
-        if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
-        if debug:
-          print(f"{vars_in_regs=}")
-        sorted_vars = sorted(vars_in_regs, key=lambda i: i.end, reverse=True)
-        last_ending_var, *_ = sorted_vars
-        self.move_var_to_stack(last_ending_var)
-        reg = self.pools[reg_type].pop(0)
-        return reg
-    else: raise Exception("Dead branch")
+    vars_in_regs = []
+    for u, var in self.uops.items():
+      if var.reg is not None and var.reg not in excludes and var.reg not in self.reserved \
+        and isinstance(var.reg, reg_type):
+        vars_in_regs.append(var)
+    if len(vars_in_regs) == 0: raise Exception("No avaialble registers")
+    if debug:
+      print(f"{vars_in_regs=}")
+    sorted_vars = sorted(vars_in_regs, key=lambda i: i.end, reverse=True)
+    last_ending_var, *_ = sorted_vars
+    self.move_var_to_stack(last_ending_var)
+    reg = self.pools[reg_type].pop(0)
+    return reg
 
   def share(self, dst: UOp, src: UOp):
     dst_var, src_var = self.uops[dst], self.uops[src]
@@ -445,7 +449,7 @@ def const(ctx, x):
     if x.dtype.itemsize == 4: data_type = ".single"
     else: data_type = ".double"
     ctx.mem.append((label, f"{data_type} {x.arg}"))
-    temp_reg = ctx.r.alloc([reg], IReg)
+    temp_reg = ctx.r.alloc(IReg, [reg])
     ctx.r.return_reg(temp_reg)
     return [f"adrp {temp_reg}, {label}",
       f"ldr {reg_str}, [{temp_reg}, #:lo12:{label}]"]
