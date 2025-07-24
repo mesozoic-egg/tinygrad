@@ -181,8 +181,6 @@ class Allocator:
     self.cur_step = 0
     self.kernel: list[str] = []
 
-  def __getitem__(self, _key: UOp) -> RegBase:
-    return self.assign(_key)
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel
