@@ -243,10 +243,9 @@ class Allocator:
     if var.reg is not None: return var.reg
     reg = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
-      self.kernel.extend(var.load(reg, "stack"))
+      self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
     var.reg = reg
-    assert var.reg is not None
     return reg
   def assign_i8(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, IReg, excludes, reserve).render8()
@@ -258,22 +257,21 @@ class Allocator:
     return self.assign(_key, FReg, excludes, reserve).render32()
   def assign_f64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, FReg, excludes, reserve).render64()
-  def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False):
+  def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False) -> None:
+    uop = _key
+    var = self.uops[uop]
+    self.alloc_reg(reg)
+    if var.reg is not None:
+      self.kernel.extend(var.copy(reg))
+    var.reg = reg
+
+  def alloc_reg(self, reg: RegBase) -> None:
     pool = self.pools[type(reg)]
-    var = self.uops[_key]
     if reg in pool:
-      if var.reg is not None: self.kernel.extend(var.copy(reg))
-      var.reg = reg
       pool.pop(pool.index(reg))
     else:
-      vars = [v for v in self.uops.values() if v.reg == reg]
-      assert len(vars) == 1
-      var2 = vars[0]
-      self.save_var_to_stack(var2)
-      var2.reg = None
-      if var.reg is not None: self.kernel.extend(var.copy(reg))
-      var.reg = reg
-  
+      self._spill(reg)
+
   def release(self, reg: RegBase): del self.reserved[reg] 
 
   def free_expired(self, i: int):
