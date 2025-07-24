@@ -160,6 +160,14 @@ class Variable:
         op = "movq"
     return [f"{op} {dst.render64()}, {self.reg.render64()}"]
 
+x86_params: dict[int, int] = {
+  0: 7, #R7 (rdi)
+  1: 6, #R6 (rsi)
+  2: 2, #R2 (rdx)
+  3: 1, #R1 (rcx)
+  4: 8, #R8
+  5: 9, #R9 
+}
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int = 0):
     self.pools: dict[type[RegBase], list[RegBase]] = {
@@ -171,14 +179,6 @@ class Allocator:
     self.blocked: list[RegBase] = [IReg(4)]
     self.stack_size = 0
     self.cur_step = 0
-    self.x86_params: dict[int, int] = {
-      0: 7, #R7 (rdi)
-      1: 6, #R6 (rsi)
-      2: 2, #R2 (rdx)
-      3: 1, #R1 (rcx)
-      4: 8, #R8
-      5: 9, #R9 
-    }
     self.kernel: list[str] = []
 
   def __getitem__(self, _key: UOp) -> RegBase:
@@ -791,7 +791,7 @@ class AsmRenderer(Renderer):
         if Arch.arm:
           var.reg = r.pools[IReg].pop(0)
         else:
-          reg_num = r.x86_params[u.arg]
+          reg_num = x86_params[u.arg]
           reg_idx = r.pools[IReg].index(IReg(reg_num))
           assert reg_idx > -1
           var.reg = r.pools[IReg].pop(reg_idx)
