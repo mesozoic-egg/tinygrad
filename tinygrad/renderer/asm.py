@@ -190,24 +190,30 @@ class Allocator:
             excludes: list[RegBase]=[],
             debug:bool=False
             ) -> RegBase:
+    return self.alloc_multiple(1, reg_type, excludes)[0]
+
+  def alloc_multiple(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]):
     pool = self.pools[reg_type]
+    regs = []
     if len(pool):
-      reg2 = None
-      i = None
-      for _i, _reg in enumerate(pool):
-        if _reg not in self.blocked:
-          i = _i
-          break
-      if i is not None:
-        reg = pool.pop(i)
-        return reg
-    vars_in_regs = []
-    candidates = self._find_spill_candidates(1, reg_type, excludes)
-    u, var = candidates[0]
-    reg = var.reg
-    assert reg is not None
-    self._spill(reg)
-    return reg
+      idx, count = 0, 0
+      while idx < len(pool) and count < num:
+        _reg = pool[idx]
+        if _reg not in self.blocked and _reg not in excludes and _reg not in self.reserved:
+          regs.append(pool.pop(idx))
+          count += 1
+        else:
+          idx += 1
+    if len(regs) == num:
+      return regs
+    num_to_spill = num - len(regs)
+    candidates = self._find_spill_candidates(num_to_spill, reg_type, excludes)
+    for uop, var in candidates:
+      reg = var.reg
+      assert reg is not None
+      self._spill(reg)
+      regs.append(reg)
+    return regs
 
   def share(self, dst: UOp, src: UOp):
     dst_var, src_var = self.uops[dst], self.uops[src]
