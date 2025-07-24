@@ -162,15 +162,14 @@ class Variable:
 
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int = 0):
-    self.pool: list[RegBase] = [IReg(i) for i in range(num_ireg-1, -1, -1)]
     self.pools: dict[type[RegBase], list[RegBase]] = {
       IReg: [IReg(i) for i in range(num_ireg)],
       FReg: [FReg(i) for i in range(num_freg)]
     }
+    self.uops: dict[UOp, Variable] = {}
     self.variables: list[Variable] = []
     self.stack_size = 0
-    self.uops: dict[UOp, Variable] = {}
-    self.index = 0
+    self.cur_step = 0
     self.reserved: dict[RegBase, int] = {}
     self.x86_params: dict[int, int] = {
       0: 7, #R7 (rdi)
@@ -181,7 +180,6 @@ class Allocator:
       5: 9, #R9 
     }
     self.kernel: list[str] = []
-    self.i: int = 0
     self.blocked: list[RegBase] = [IReg(4)]
 
   def __getitem__(self, _key: UOp) -> RegBase:
@@ -381,7 +379,7 @@ def alu(ctx, x):
     _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
     excludes.append(_reg)
     src_regs.append(_reg)
-  if ctx.r.uops[x.src[0]].end == ctx.r.i:
+  if ctx.r.uops[x.src[0]].end == ctx.r.cur_step:
     ctx.r.share(x, x.src[0])
     dst = src_regs[0]
   else:
@@ -592,12 +590,12 @@ def _where(ctx, x):
     else: mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
     return [
       f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
-      f"jz .f_case_{ctx.r.i}", #jump if ZF=1 => condition is false
+      f"jz .f_case_{ctx.r.cur_step}", #jump if ZF=1 => condition is false
       f"{mov_op} {_dst}, {_t}",
-      f"jmp .end_{ctx.r.i}",
-      f".f_case_{ctx.r.i}:",
+      f"jmp .end_{ctx.r.cur_step}",
+      f".f_case_{ctx.r.cur_step}:",
       f"{mov_op} {_dst}, {_f}",
-      f".end_{ctx.r.i}:",
+      f".end_{ctx.r.cur_step}:",
     ]
 
 def idiv(ctx, x):
@@ -813,7 +811,7 @@ class AsmRenderer(Renderer):
     if DEBUG.value >= 6:
       for _u, v in r.uops.items(): print(v, oneline_uop(_u))
     for i,u in enumerate(uops):
-      self.r.i = i
+      self.r.cur_step = i
       if DEBUG.value >= 6:
         print("=================================")
         print(i, r.uops[u], u)
@@ -1160,7 +1158,7 @@ class TestAllocatorAluShareReg(unittest.TestCase):
     self.r.assign_f32(self.uop1)
     self.r.assign_f32(self.uop2)
     rewriter = arm_rewrite if Arch.arm else x86_rewrite
-    self.r.i = 2
+    self.r.cur_step = 2
     l = rewriter.rewrite(self.uop3, self)
 
     assert self.r.uops[self.uop3].reg == self.r.uops[self.uop1].reg
