@@ -95,14 +95,17 @@ class TestOps(unittest.TestCase):
     a = Tensor.full((4,4), 20.0, dtype=dtypes.float32).contiguous().numpy()
     np.testing.assert_equal(a, np.full((4,4), 20.0, dtype=np.float32))
 
-  @unittest.skip("")
+  @unittest.skip("need to handle MOD")
   def test_eye(self):
     print(Tensor.eye(10).numpy())
 
-  @unittest.skip("")
   def test_split(self):
     tensors = Tensor.arange(16).reshape((4,4)).split((2,2))
-    print(tensors[1].numpy())
+    ret = tensors[1].tolist()
+    assert ret == [
+      [8, 9, 10, 11],
+      [12, 13, 14, 15]
+    ]
 
   def test_chunk(self):
     t = Tensor.arange(13).repeat((8, 1))
