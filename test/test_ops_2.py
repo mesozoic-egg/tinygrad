@@ -162,11 +162,10 @@ class TestOps(unittest.TestCase):
     tg_ret = Tensor.ones(16, 16, dtype=dtypes.int).sum(axis=1).numpy()
     np.testing.assert_equal(tg_ret, np_ret)
 
-  @unittest.skip("")
   def test_where(self):
     a = Tensor([1, 2, 3])
     b = (a > 2).where(8, 9)
-    print(b.numpy())
+    assert b.tolist() == [9, 9, 8]
 
   def test_matmul_int64(self):
     with Context(DEBUG=0):
