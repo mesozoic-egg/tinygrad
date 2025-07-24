@@ -104,7 +104,6 @@ class TestOps(unittest.TestCase):
     tensors = Tensor.arange(16).reshape((4,4)).split((2,2))
     print(tensors[1].numpy())
 
-  @unittest.skip("")
   def test_chunk(self):
     t = Tensor.arange(13).repeat((8, 1))
     print(f"{t.shape=}")
@@ -158,9 +157,10 @@ class TestOps(unittest.TestCase):
     #helper_test_op([(45,65)], lambda x: x.acos(), low=-300, high=-297)
     #helper_test_op([(45,65)], lambda x: x.acos(), low=300, high=303)
 
-  @unittest.skip("")
   def test_sum(self):
-    print(Tensor.ones(16, 16, dtype=dtypes.int).sum(axis=1).numpy())
+    np_ret = np.ones((16, 16)).sum(axis=1)
+    tg_ret = Tensor.ones(16, 16, dtype=dtypes.int).sum(axis=1).numpy()
+    np.testing.assert_equal(tg_ret, np_ret)
 
   @unittest.skip("")
   def test_where(self):
