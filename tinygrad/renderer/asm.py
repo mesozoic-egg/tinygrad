@@ -234,20 +234,13 @@ class Allocator:
     k = v.store("stack")
     self.kernel.extend(k)
 
-  def assign(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool=False,
-             reg_type: Optional[type[RegBase]]=IReg,
+  def assign(self, _key: UOp,
+             reg_type: type[RegBase],
+             excludes: list[RegBase]=[], reserve: bool=False,
              debug:bool=False,
              ) -> RegBase:
-    if debug:
-      print(f"\nassigning {_key=}")
-      print(f"{excludes=}")
-      print(f"{reg_type=}")
-      print("")
-    if _key not in self.uops:
-      raise Exception("Attempting to access a non-existent variable, maybe expired?")
     var = self.uops[_key]
-    if var.reg is not None:
-      return var.reg
+    if var.reg is not None: return var.reg
     reg = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
     if var.stack is not None:
       self.kernel.extend(var.load(reg, "stack"))
@@ -256,15 +249,15 @@ class Allocator:
     assert var.reg is not None
     return reg
   def assign_i8(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, excludes, reserve, reg_type=IReg).render8()
+    return self.assign(_key, IReg, excludes, reserve).render8()
   def assign_i32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, excludes, reserve, reg_type=IReg).render32()
+    return self.assign(_key, IReg, excludes, reserve).render32()
   def assign_i64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, excludes, reserve, reg_type=IReg).render64()
+    return self.assign(_key, IReg, excludes, reserve).render64()
   def assign_f32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, excludes, reserve, reg_type=FReg).render32()
+    return self.assign(_key, FReg, excludes, reserve).render32()
   def assign_f64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, excludes, reserve, reg_type=FReg).render64()
+    return self.assign(_key, FReg, excludes, reserve).render64()
   def assign_reg(self, reg: RegBase, _key: UOp, reserve: bool=False):
     pool = self.pools[type(reg)]
     var = self.uops[_key]
@@ -914,8 +907,8 @@ class TestAllocatorExpire(unittest.TestCase):
     self.uop1, self.uop2 = uop1, uop2
     self.a.uops[uop1] = Variable(uop1, 0, 2)
     self.a.uops[uop2] = Variable(uop2, 0, 10)
-    self.a.assign(uop1, reserve=True)
-    self.a.assign(uop2, reserve=True)
+    self.a.assign(uop1, IReg, reserve=True)
+    self.a.assign(uop2, IReg, reserve=True)
     assert len(self.a.uops) == 2
     assert len(self.a.reserved) == 2
   def tearDown(self): del self.a, self.uop1, self.uop2
@@ -950,7 +943,7 @@ class TestAllocatorShare(unittest.TestCase):
     self.var1, self.var2 = Variable(uop1, 0, 2), Variable(uop2, 0, 10)
     self.a.uops[uop1] = self.var1
     self.a.uops[uop2] = self.var2
-    self.a.assign(uop1, reserve=True)
+    self.a.assign(uop1, IReg, reserve=True)
     self.a.share(uop2, uop1)
     
   def test_share_regs(self):
@@ -976,12 +969,12 @@ class TestAllocatorSpill(unittest.TestCase):
     self.a.uops[uop1] = Variable(uop1, 0, 9)
     self.a.uops[uop2] = Variable(uop2, 0, 10)
     self.a.uops[uop3] = Variable(uop3, 0, 11)
-    self.a.assign(uop1)
-    self.a.assign(uop2)
+    self.a.assign(uop1, IReg)
+    self.a.assign(uop2, IReg)
   def tearDown(self): del self.uop1, self.uop2, self.uop3, self.a
 
   def test_spill(self):
-    reg = self.a.assign(self.uop3)
+    reg = self.a.assign(self.uop3, IReg)
     kernel = self.a.flush_kernel()
     assert reg == IReg(1)
     assert self.a.uops[self.uop1].reg   is not None
@@ -998,7 +991,7 @@ class TestAllocatorSpill(unittest.TestCase):
     self.a.uops[self.uop2].stack = 0
     self.a.uops[self.uop3].stack = 8
     self.a.stack_size = 16
-    reg = self.a.assign(self.uop3)
+    reg = self.a.assign(self.uop3, IReg)
     kernel = self.a.flush_kernel()
     assert self.a.uops[self.uop2].stack == 0
     assert self.a.uops[self.uop3].stack == 8
@@ -1007,7 +1000,7 @@ class TestAllocatorSpill(unittest.TestCase):
 
   def test_spill_with_stack_str(self):
     assert self.a.stack_size == 0
-    self.a.assign(self.uop3)
+    self.a.assign(self.uop3, IReg)
     assert self.a.stack_size == 8
     assert self.a.uops[self.uop2].stack == 8
 
@@ -1068,7 +1061,7 @@ class TestAllocatorStackAll(unittest.TestCase):
     var = Variable(uop1, 0, 10)
     var.stack = 4
     self.a.uops[uop1] = var
-    self.a.assign(uop1)
+    self.a.assign(uop1, IReg)
     self.a.flush_kernel()
   def tearDown(self): del self.a
 
@@ -1095,52 +1088,52 @@ class TestAllocatorExcludeReserve(unittest.TestCase):
   def test_exclude(self):
     self.a = Allocator(2, 0)
     self._setup()
-    reg1 = self.a.assign(self.uop1)
-    reg2 = self.a.assign(self.uop2)
-    reg3 = self.a.assign(self.uop3, excludes=[reg2])
+    reg1 = self.a.assign(self.uop1, IReg)
+    reg2 = self.a.assign(self.uop2, IReg)
+    reg3 = self.a.assign(self.uop3, IReg, excludes=[reg2])
     assert self.var1.reg is None and self.var1.stack == 8
     assert self.var2.reg == IReg(1)
     assert self.var3.reg == IReg(0)
   def test_exclude_not_enough_reg(self):
     self.a = Allocator(1, 0)
     self._setup()
-    self.a.assign(self.uop2)
-    self.a.assign(self.uop3)
+    self.a.assign(self.uop2, IReg)
+    self.a.assign(self.uop3, IReg)
   def test_exclude_not_enough_reg_raise(self):
     self.a = Allocator(1, 0)
     self._setup()
-    reg2 = self.a.assign(self.uop2)
+    reg2 = self.a.assign(self.uop2, IReg)
     with self.assertRaises(Exception):
-      self.a.assign(self.uop3, excludes=[reg2])
+      self.a.assign(self.uop3, IReg, excludes=[reg2])
   def test_reserve(self):
     self.a = Allocator(2, 0)
     self._setup()
-    self.a.assign(self.uop1)
-    self.a.assign(self.uop2, reserve=True)
-    self.a.assign(self.uop3)
+    self.a.assign(self.uop1, IReg)
+    self.a.assign(self.uop2, IReg, reserve=True)
+    self.a.assign(self.uop3, IReg)
     assert self.var3.reg == IReg(0)
   def test_reserve_not_enough_reg(self):
     self.a = Allocator(2, 0)
     self._setup()
-    self.a.assign(self.uop1, reserve=True)
-    self.a.assign(self.uop2, reserve=True)
+    self.a.assign(self.uop1, IReg, reserve=True)
+    self.a.assign(self.uop2, IReg, reserve=True)
     with self.assertRaises(Exception):
-      self.a.assign(self.uop3)
+      self.a.assign(self.uop3, IReg)
   def test_reserve_release(self):
     self.a = Allocator(2, 0)
     self._setup()
-    self.a.assign(self.uop1, reserve=True)
-    reg2 = self.a.assign(self.uop2, reserve=True)
+    self.a.assign(self.uop1, IReg, reserve=True)
+    reg2 = self.a.assign(self.uop2, IReg, reserve=True)
     self.a.release(reg2)
-    self.a.assign(self.uop3)
+    self.a.assign(self.uop3, IReg)
   def test_reserve_not_enough_reg_pair(self):
     self.a = Allocator(3, 0)
     self._setup()
-    self.a.assign(self.uop1, reserve=True)
-    self.a.assign(self.uop2, reserve=True)
+    self.a.assign(self.uop1, IReg, reserve=True)
+    self.a.assign(self.uop2, IReg, reserve=True)
     with self.assertRaises(Exception):
-      reg3 = self.a.assign(self.uop3)
-      self.a.assign(self.uop4, excludes=[reg3])
+      reg3 = self.a.assign(self.uop3, IReg)
+      self.a.assign(self.uop4, IReg, excludes=[reg3])
 
 class TestAllocatorAluShareReg(unittest.TestCase):
   def test_add_no_share(self):
