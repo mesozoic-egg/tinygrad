@@ -283,6 +283,8 @@ class Allocator:
     for i, reg in zip(need_alloc, alloc_regs):
       uop = uops[i]
       var = self.uops[uop]
+      if var.stack is not None:
+        self.kernel.extend(var.load(reg))
       var.reg = reg
       regs[i] = reg
     for reg in regs: assert reg is not None
@@ -573,7 +575,7 @@ def float_cmp(ctx, x, a, b):
     temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
     temp_reg, temp_reg_2 = temp_regs[0], temp_regs[1]
   else:
-    temp_reg = ctx.r.alloc(reg_type, [src_a, src_b, dst])
+    temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
     temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg(temp_reg)
   ctx.r.return_reg(temp_reg_2)
@@ -610,7 +612,6 @@ def float_cmp(ctx, x, a, b):
         f"xor {dst}, {dst}",
         f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
         f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-        f"setp {temp_reg_2.render8()}",
         f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
       ]
 
@@ -620,9 +621,14 @@ def _where(ctx, x):
   cond, t, f = x.src
   _cond = ctx.r.assign(cond, reg_type=IReg)
   exclude_cond = [cond] if reg_type == IReg else []
-  _dst = ctx.r.assign(x, reg_type=reg_type, excludes=exclude_cond)
-  _t = ctx.r.assign(t, reg_type=reg_type, excludes=[x]+exclude_cond)
-  _f = ctx.r.assign(f, reg_type=reg_type, excludes=[t, x]+exclude_cond)
+  if False:
+    _dst = ctx.r.assign(x, reg_type=reg_type, excludes=exclude_cond)
+    _t = ctx.r.assign(t, reg_type=reg_type, excludes=[x]+exclude_cond)
+    _f = ctx.r.assign(f, reg_type=reg_type, excludes=[t, x]+exclude_cond)
+  else:
+    _dst, _t, _f = ctx.r.assign_multiple([x,t,f], reg_type=reg_type,
+      excludes=exclude_cond)
+
   if Arch.arm:
     if dtypes.is_int(x.dtype): op = "csel"
     else: op = "fcsel"
@@ -872,8 +878,10 @@ class AsmRenderer(Renderer):
         if (l:=rewriter.rewrite(u, ctx=self)) is None:
           raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
         l = cast(list[str], l)
-        l = ["", *r.flush_kernel(), *l]
+        l = [*r.flush_kernel(), *l, ""]
         if DEBUG.value >= 6:
+          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")]
+          l = [*uop_str, *l]
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
         kernel.extend(l)
@@ -919,7 +927,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/acosh/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/abs/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS
