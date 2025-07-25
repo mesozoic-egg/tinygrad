@@ -507,9 +507,8 @@ def _index(ctx, x):
 
 def assign(ctx, x):
   reg_type = IReg if dtypes.is_int(x.src[0].dtype) or dtypes.is_bool(x.src[0].dtype) else FReg
-  dst = ctx.r.assign(x, reg_type=reg_type)
   x_src_0_reg = ctx.r.uops[x.src[0]].reg
-  src = ctx.r.assign(x.src[1], excludes=[x_src_0_reg], reg_type=reg_type)
+  dst, src = ctx.r.assign_multiple([x, x.src[1]], excludes=[x_src_0_reg], reg_type=reg_type)
   opcode = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   ctx.r.uops[x].stack = ctx.r.uops[x.src[0]].stack
   return [f"{opcode} {dst}, {src}"]
