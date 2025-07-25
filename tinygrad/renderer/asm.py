@@ -553,13 +553,13 @@ def float_cmp(ctx, x, a, b):
   if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
     reg_type=IReg
     regs = ctx.r.assign_multiple([x, a, b], IReg)
-    dst, src_a, src_b = tuple(regs)
+    dst, src_a, src_b = regs
     temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
     temp_reg, temp_reg_2 = temp_regs
   else:
     reg_type = FReg
     dst = ctx.r.assign(x, IReg)
-    src_a, src_b = tuple(ctx.r.assign_multiple([a, b], FReg))
+    src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
     temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
     temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg(temp_reg)
@@ -651,9 +651,8 @@ def idiv(ctx, x):
     if mov2: ret += mov2
     return ret
   else:
-    _dividend = ctx.r.assign(dividend, reg_type=IReg)
-    _divisor = ctx.r.assign(divisor, reg_type=IReg)
-    _quotient = ctx.r.assign(x, reg_type=IReg)
+    _dividend, _divisor, _quotient = ctx.r.assign_multiple(
+      [dividend, divisor, x], IReg)
     ret = [
       f"sdiv {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
     ]
