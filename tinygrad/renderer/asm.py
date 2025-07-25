@@ -239,7 +239,7 @@ class Allocator:
              ) -> RegBase:
     var = self.uops[_key]
     if var.reg is not None: return var.reg
-    reg = self.alloc(excludes=excludes, reg_type=reg_type, debug=debug)
+    reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
@@ -272,7 +272,7 @@ class Allocator:
 
   def assign_multiple(self, uops: List[UOp], reg_type: type[RegBase], excludes: list[RegBase]=[]) -> list[RegBase]:
     regs: list[Optional[RegBase]] = [None] * len(uops)
-    need_alloc = [i for i, uop in enumerate(uops) if self.uops[uop].reg is None]
+    need_alloc: list[int] = []
     for i, uop in enumerate(uops):
       _reg = self.uops[uop].reg
       if _reg is None:
@@ -520,13 +520,25 @@ def assign(ctx, x):
 def to_bool(ctx, x, a):
   if dtypes.is_int(a.dtype):
     reg_type = IReg
+    if True:
+      dst = ctx.r.assign(x, reg_type=IReg)
+      exclude_dst_reg = [dst] if reg_type == IReg else []
+      src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
+      regs = [dst, src]
+    else:
+      regs = ctx.r.assign_multiple([x, a], reg_type=IReg)
+      dst, src = regs[0], regs[1]
+    print(f"{regs=}")
+    print()
+    temp_reg = ctx.r.alloc(excludes=regs, reg_type=reg_type)
+    ctx.r.return_reg(temp_reg)
   else:
     reg_type = FReg
-  dst = ctx.r.assign(x, reg_type=IReg)
-  exclude_dst_reg = [dst] if reg_type == IReg else []
-  src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
-  temp_reg = ctx.r.alloc(excludes=[src]+exclude_dst_reg, reg_type=reg_type)
-  ctx.r.return_reg(temp_reg)
+    dst = ctx.r.assign(x, reg_type=IReg)
+    exclude_dst_reg = [dst] if reg_type == IReg else []
+    src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
+    temp_reg = ctx.r.alloc(excludes=[src]+exclude_dst_reg, reg_type=reg_type)
+    ctx.r.return_reg(temp_reg)
   if Arch.arm:
     if dtypes.is_int(a.dtype):
       cmp = f"cmp {src}, #0"
