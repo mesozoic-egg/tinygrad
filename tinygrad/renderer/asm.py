@@ -600,16 +600,16 @@ def float_cmp(ctx, x, a, b):
         f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
       ]
 
-def cmplt_arm(ctx, x, a, b):
+def cmp_arm(ctx, x, a, b):
   reg_type = IReg if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype) else FReg
   regs = ctx.r.assign_multiple(uops=[x, a, b], reg_type=reg_type)
   dst, src_a, src_b = regs
   size = a.dtype.itemsize
+  cmp = "lt" if x.op is Ops.CMPLT else "ne"
   return [
-    f"cmp {src_a.render(size)}, {src_b.render(size)}",   # Compare a and b
-    f"cset {dst}, lt"            # Set if less (mi = minus/Negative flag)
+    f"cmp {src_a.render(size)}, {src_b.render(size)}",
+    f"cset {dst}, {cmp}"
   ]
-
 
 def _where(ctx, x):
   if dtypes.is_int(x.dtype): reg_type = IReg
@@ -736,9 +736,9 @@ x86_rewrite = PatternMatcher([
 ]) + complex_rewrites
 
 arm_rewrite = PatternMatcher([
-  (UPat((Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.int),
+  (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a", dtype=dtypes.int),
                                   UPat(name="b"))),
-   cmplt_arm),
+   cmp_arm),
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, #{x.arg}"]),
