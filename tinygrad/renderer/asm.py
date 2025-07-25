@@ -578,16 +578,20 @@ def to_bool(ctx, x, a):
     ]
 
 def float_cmp(ctx, x, a, b):
-  if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype): reg_type = IReg
-  else: reg_type = FReg
-  dst = ctx.r.assign(x, reg_type=IReg)
-  exclude_dst = [dst] if reg_type == IReg else []
-  src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
-  src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
-  if reg_type == IReg:
+  if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
+    reg_type = IReg
+    dst = ctx.r.assign(x, reg_type=IReg)
+    exclude_dst = [dst] if reg_type == IReg else []
+    src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
+    src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
     temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
     temp_reg, temp_reg_2 = temp_regs[0], temp_regs[1]
   else:
+    reg_type = FReg
+    dst = ctx.r.assign(x, reg_type=IReg)
+    exclude_dst = [dst] if reg_type == IReg else []
+    src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
+    src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
     temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
     temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg(temp_reg)
