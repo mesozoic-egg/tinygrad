@@ -924,7 +924,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/abs/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/acosh/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS

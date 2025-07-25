@@ -327,7 +327,7 @@ class TestOps(unittest.TestCase):
     helper_test_op([(2,)], lambda x: x.acosh(), grad_atol=1e-6)
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-3, grad_rtol=1e-2, low=-300, high=-297)
 
-  @unittest.skip("need simpler code first")
+  @unittest.skipUnless(os.environ.get("ACOSH"), "")
   def test_acosh_high(self):
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-6, low=300, high=303)
 
