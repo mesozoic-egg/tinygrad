@@ -557,9 +557,12 @@ def float_cmp(ctx, x, a, b):
   exclude_dst = [dst] if reg_type == IReg else []
   src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
   src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
-  temp_reg = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=reg_type)
-  temp_reg_2 = ctx.r.alloc(excludes=[src_a, src_b]+exclude_dst, reg_type=IReg)
-  assert temp_reg != temp_reg_2
+  if reg_type == IReg:
+    temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
+    temp_reg, temp_reg_2 = temp_regs[0], temp_regs[1]
+  else:
+    temp_reg = ctx.r.alloc(reg_type, [src_a, src_b, dst])
+    temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg(temp_reg)
   ctx.r.return_reg(temp_reg_2)
   if Arch.arm:
