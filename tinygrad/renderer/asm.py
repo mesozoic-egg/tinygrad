@@ -531,7 +531,7 @@ def assign(ctx, x):
 def to_bool(ctx, x, a):
   if dtypes.is_int(a.dtype):
     reg_type = IReg
-    if True:
+    if False:
       dst = ctx.r.assign(x, reg_type=IReg)
       exclude_dst_reg = [dst] if reg_type == IReg else []
       src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
