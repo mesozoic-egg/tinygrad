@@ -607,13 +607,8 @@ def _where(ctx, x):
   cond, t, f = x.src
   _cond = ctx.r.assign(cond, reg_type=IReg)
   exclude_cond = [cond] if reg_type == IReg else []
-  if False:
-    _dst = ctx.r.assign(x, reg_type=reg_type, excludes=exclude_cond)
-    _t = ctx.r.assign(t, reg_type=reg_type, excludes=[x]+exclude_cond)
-    _f = ctx.r.assign(f, reg_type=reg_type, excludes=[t, x]+exclude_cond)
-  else:
-    _dst, _t, _f = ctx.r.assign_multiple([x,t,f], reg_type=reg_type,
-      excludes=exclude_cond)
+  _dst, _t, _f = ctx.r.assign_multiple([x,t,f], reg_type=reg_type,
+    excludes=exclude_cond)
 
   if Arch.arm:
     if dtypes.is_int(x.dtype): op = "csel"
