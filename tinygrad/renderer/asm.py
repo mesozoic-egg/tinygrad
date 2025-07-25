@@ -408,10 +408,15 @@ def alu(ctx, x):
   reg_type = IReg if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else FReg
   src_regs = []
   excludes: List[RegBase] = []
-  for _src in x.src:
-    _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
-    excludes.append(_reg)
-    src_regs.append(_reg)
+  if False:
+    for _src in x.src:
+      _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
+      excludes.append(_reg)
+      src_regs.append(_reg)
+  else:
+    src_regs = ctx.r.assign_multiple(list(x.src), reg_type, excludes)
+    excludes = src_regs
+
   if ctx.r.uops[x.src[0]].end == ctx.r.cur_step:
     ctx.r.share(x, x.src[0])
     dst = src_regs[0]
