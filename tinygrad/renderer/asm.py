@@ -406,22 +406,13 @@ AluOps = _AluOps({
 def alu(ctx, x):
   dtype = x.src[0].dtype
   reg_type = IReg if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else FReg
-  src_regs = []
-  excludes: List[RegBase] = []
-  if False:
-    for _src in x.src:
-      _reg = ctx.r.assign(_src, excludes=excludes, reg_type=reg_type)
-      excludes.append(_reg)
-      src_regs.append(_reg)
-  else:
-    src_regs = ctx.r.assign_multiple(list(x.src), reg_type, excludes)
-    excludes = src_regs
+  src_regs = ctx.r.assign_multiple(list(x.src), reg_type)
 
   if ctx.r.uops[x.src[0]].end == ctx.r.cur_step:
     ctx.r.share(x, x.src[0])
     dst = src_regs[0]
   else:
-    dst = ctx.r.assign(x, excludes=excludes, reg_type=reg_type)
+    dst = ctx.r.assign(x, reg_type, src_regs)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
   _dst = dst.render(dtype.itemsize)
   src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
