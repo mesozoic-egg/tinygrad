@@ -270,6 +270,25 @@ class Allocator:
     else:
       self._spill(reg)
 
+  def assign_multiple(self, uops: List[UOp], reg_type: type[RegBase], excludes: list[RegBase]=[]) -> list[RegBase]:
+    regs: list[Optional[RegBase]] = [None] * len(uops)
+    need_alloc = [i for i, uop in enumerate(uops) if self.uops[uop].reg is None]
+    for i, uop in enumerate(uops):
+      _reg = self.uops[uop].reg
+      if _reg is None:
+        need_alloc.append(i)
+      else:
+        regs[i] = _reg
+    alloc_regs = self.alloc_multiple(len(need_alloc), reg_type, excludes)
+    for i, reg in zip(need_alloc, alloc_regs):
+      uop = uops[i]
+      var = self.uops[uop]
+      var.reg = reg
+      regs[i] = reg
+    for reg in regs: assert reg is not None
+    regs2 = cast(list[RegBase], regs)
+    return regs2
+
   def release(self, reg: RegBase): del self.reserved[reg] 
 
   def free_expired(self, i: int):
