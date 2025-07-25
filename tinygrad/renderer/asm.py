@@ -671,9 +671,6 @@ def idiv(ctx, x):
 
 
 complex_rewrites = PatternMatcher([
-  (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
-                                  UPat(name="b"))),
-   float_cmp),
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.IDIV, name="x"), idiv),
   (UPat(GroupOp.ALU, name="x"), alu),
@@ -685,6 +682,9 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(name="a"),)), to_bool),
 ])
 x86_rewrite = PatternMatcher([
+  (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
+                                  UPat(name="b"))),
+   float_cmp),
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
