@@ -559,14 +559,8 @@ def float_cmp(ctx, x, a, b):
     temp_reg, temp_reg_2 = temp_regs
   else:
     reg_type = FReg
-    if False:
-      dst = ctx.r.assign(x, reg_type=IReg)
-      exclude_dst = []
-      src_a = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst)
-      src_b = ctx.r.assign(b, excludes=[src_a] + exclude_dst, reg_type=reg_type)
-    else:
-      dst = ctx.r.assign(x, IReg)
-      src_a, src_b = tuple(ctx.r.assign_multiple([a, b], FReg))
+    dst = ctx.r.assign(x, IReg)
+    src_a, src_b = tuple(ctx.r.assign_multiple([a, b], FReg))
     temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
     temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg(temp_reg)
