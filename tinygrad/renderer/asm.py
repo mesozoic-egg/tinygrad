@@ -503,9 +503,13 @@ def endrange(ctx, x):
 
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
-  src0_reg = ctx.r.assign(src0, reg_type=IReg)
+  if False:
+    src0_reg = ctx.r.assign(src0, reg_type=IReg)
+    src1_reg = ctx.r.assign(src1, excludes=[src0_reg], reg_type=IReg)
+  else:
+    regs = ctx.r.assign_multiple([src0, src1], IReg)
+    src0_reg, src1_reg = regs[0], regs[1]
   src0_str = src0_reg.render64()
-  src1_reg = ctx.r.assign(src1, excludes=[src0_reg], reg_type=IReg)
   src1_str = src1_reg.render64()
   reg = ctx.r.assign(x, excludes=[src0_reg, src1_reg], reg_type=IReg).render64()
   multiplier = src0.dtype.itemsize
