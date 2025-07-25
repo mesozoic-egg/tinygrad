@@ -494,13 +494,8 @@ def endrange(ctx, x):
 
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
-  if False:
-    src0_reg = ctx.r.assign(src0, reg_type=IReg)
-    src1_reg = ctx.r.assign(src1, excludes=[src0_reg], reg_type=IReg)
-    reg = ctx.r.assign(x, excludes=[src0_reg, src1_reg], reg_type=IReg).render64()
-  else:
-    regs = ctx.r.assign_multiple([src0, src1, x], IReg)
-    src0_reg, src1_reg, reg = regs[0], regs[1], regs[2]
+  regs = ctx.r.assign_multiple([src0, src1, x], IReg)
+  src0_reg, src1_reg, reg = regs
   src0_str = src0_reg.render64()
   src1_str = src1_reg.render64()
   multiplier = src0.dtype.itemsize
@@ -522,14 +517,8 @@ def assign(ctx, x):
 def to_bool(ctx, x, a):
   if dtypes.is_int(a.dtype):
     reg_type = IReg
-    if False:
-      dst = ctx.r.assign(x, reg_type=IReg)
-      exclude_dst_reg = [dst] if reg_type == IReg else []
-      src = ctx.r.assign(a, reg_type=reg_type, excludes=exclude_dst_reg)
-      regs = [dst, src]
-    else:
-      regs = ctx.r.assign_multiple([x, a], reg_type=IReg)
-      dst, src = regs[0], regs[1]
+    regs = ctx.r.assign_multiple([x, a], reg_type=IReg)
+    dst, src = regs
     temp_reg = ctx.r.alloc(excludes=regs, reg_type=reg_type)
     ctx.r.return_reg(temp_reg)
   else:
