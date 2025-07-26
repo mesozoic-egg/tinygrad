@@ -2,7 +2,7 @@ import time, math, unittest, functools, os, torch
 import numpy as np
 from typing import List, Callable
 import warnings
-from tinygrad.helpers import DISABLE_COMPILER_CACHE, getenv, IMAGE, DEBUG, CI, Context, TRANSCENDENTAL, DEVECTORIZE, OSX, Context
+from tinygrad.helpers import DISABLE_COMPILER_CACHE, getenv, IMAGE, DEBUG, CI, Context, TRANSCENDENTAL, DEVECTORIZE, OSX, Context 
 from tinygrad.helpers import getenv, IMAGE, DEBUG, CI, Context, TRANSCENDENTAL, OSX, AMD_LLVM
 from tinygrad import Tensor, Device, dtypes
 from tinygrad.tensor import _to_np_dtype
@@ -330,6 +330,21 @@ class TestOps(unittest.TestCase):
   @unittest.skipUnless(os.environ.get("ACOSH"), "")
   def test_acosh_high(self):
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-6, low=300, high=303)
+
+  @unittest.skipUnless(os.environ.get("LOG"), "")
+  def test_log(self):
+    #helper_test_op([(45,65)], lambda x: x.log(), grad_atol=1e-6, low=300, high=303)
+    with Context(NOOPT=1):
+      helper_test_op([(4,)], lambda x: x.log2(), grad_atol=1e-6)
+
+  @unittest.skipUnless(os.environ.get("TRANS"), "")
+  def test_trans(self):
+    with Context(NOOPT=1, TRANSCENDENTAL=1):
+      helper_test_op([(4,)], lambda x: x.reciprocal(), grad_atol=1e-6)
+
+  def test_recip(self):
+    with Context(NOOPT=1, TRANSCENDENTAL=1):
+      helper_test_op([(4,)], lambda x: x.reciprocal(), grad_atol=1e-6)
 
   def test_and(self):
     data = [[1,-8,1],[32,1,6]]

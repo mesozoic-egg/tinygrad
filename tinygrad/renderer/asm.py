@@ -615,6 +615,15 @@ def cmp_arm(ctx, x, a, b):
       f"cset {dst}, {cmp}"
   ]
 
+def recip_arm(ctx, x):
+  assert x.src[0].dtype == dtypes.float32
+  dst, src = ctx.r.assign_multiple([x, x.src[0]], FReg)
+  temp_reg = ctx.r.alloc(FReg, [dst, src])
+  ctx.r.return_reg(temp_reg)
+  return [f"fmov {temp_reg.render32()}, #1.0",
+          f"fdiv {dst.render32()}, {temp_reg.render32()}, {src.render32()}"
+          ]
+
 def _where(ctx, x):
   if dtypes.is_int(x.dtype): reg_type = IReg
   else: reg_type = FReg
@@ -743,6 +752,7 @@ arm_rewrite = PatternMatcher([
   (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
                                   UPat(name="b"))),
    cmp_arm),
+  (UPat(Ops.RECIP, name="x"), recip_arm), 
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, #{x.arg}"]),
@@ -877,7 +887,7 @@ class AsmRenderer(Renderer):
         l = cast(list[str], l)
         l = [*r.flush_kernel(), *l, ""]
         if DEBUG.value >= 6:
-          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")]
+          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:20]
           l = [*uop_str, *l]
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
@@ -924,7 +934,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/acosh/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/log/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS
