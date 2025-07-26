@@ -337,7 +337,7 @@ class TestOps(unittest.TestCase):
 
   def test_log2(self):
     with Context(NOOPT=0):
-      helper_test_op([(4,)], lambda x: x.log2(), grad_atol=1e-6, low=300, high=303)
+      helper_test_op([(4,)], lambda x: x.log2(), grad_atol=1e-6)
 
   def test_recip(self):
     with Context(NOOPT=1, TRANSCENDENTAL=1):
