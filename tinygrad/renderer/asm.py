@@ -589,15 +589,19 @@ def cmplt_float_x86(ctx, x, a, b):
   dst = ctx.r.assign(x, IReg)
   src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
   temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
-  ctx.r.return_reg([temp_reg])
+  temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
+  ctx.r.return_reg([temp_reg, temp_reg_2])
   size = a.dtype.itemsize
-  cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
+  cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
   mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
   return [
     f"xor {dst}, {dst}",
+    f"xor {temp_reg_2}, {temp_reg_2}",
     f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
     f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}",
+    f"setne {temp_reg_2.render8()}",
     f"setb {dst.render8()}",
+    f"and {dst}, {temp_reg_2}",
   ]
 
 def cmp_arm(ctx, x, a, b):
