@@ -395,8 +395,6 @@ AluOps = _AluOps({
   (Ops.SQRT, ArchType.X86, FReg, 32): "sqrtss",
   (Ops.SQRT, ArchType.X86, FReg, 64): "sqrtsd",
   (Ops.SQRT, ArchType.ARM, FReg): "fsqrt",
-  (Ops.RECIP, ArchType.X86, FReg, 32): "rcpps",
-  (Ops.RECIP, ArchType.ARM, FReg, 32): "frsqrte",
   (Ops.IDIV, ArchType.X86, FReg, 32): "idiv",
   (Ops.AND,): "and",
   (Ops.OR, ArchType.X86): "or",
@@ -617,14 +615,29 @@ def cmp_arm(ctx, x, a, b):
       f"cset {dst}, {cmp}"
   ]
 
-def recip_arm(ctx, x):
-  assert x.src[0].dtype == dtypes.float32
+def recip(ctx, x):
   dst, src = ctx.r.assign_multiple([x, x.src[0]], FReg)
   temp_reg = ctx.r.alloc(FReg, [dst, src])
   ctx.r.return_reg([temp_reg])
-  return [f"fmov {temp_reg.render32()}, #1.0",
-          f"fdiv {dst.render32()}, {temp_reg.render32()}, {src.render32()}"
-          ]
+  size = x.dtype.itemsize
+  if Arch.arm:
+    return [f"fmov {temp_reg.render(size)}, #1.0",
+            f"fdiv {dst.render(size)}, {temp_reg.render(size)}, {src.render(size)}"]
+  else:
+    if size == 4:
+      data_type = ".float"
+      mov = "movss"
+      div = "divss"
+    else:
+      data_type = ".double"
+      mov = "movsd"
+      div = "divsd"
+    label = f"const_{len(ctx.mem)}"
+    ctx.mem.append((label, f"{data_type} 1.0"))
+    return [f"{mov} {temp_reg.render(size)}, [rip + {label}]",
+            f"{div} {temp_reg.render(size)}, {src.render(size)}",
+            f"{mov} {dst.render(size)}, {temp_reg.render(size)}"]
+
 
 def _where(ctx, x):
   if dtypes.is_int(x.dtype): reg_type = IReg
@@ -686,6 +699,7 @@ def idiv(ctx, x):
 
 
 complex_rewrites = PatternMatcher([
+  (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.IDIV, name="x"), idiv),
   (UPat(GroupOp.ALU, name="x"), alu),
@@ -760,7 +774,6 @@ arm_rewrite = PatternMatcher([
   (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
                                   UPat(name="b"))),
    cmp_arm),
-  (UPat(Ops.RECIP, name="x"), recip_arm), 
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, #{x.arg}"]),
