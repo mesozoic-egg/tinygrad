@@ -221,13 +221,13 @@ class Allocator:
     assert reg, f"Source UOp must already been assigned to register {src}"
     dst_var.reg = src_var.reg
 
-  def return_reg(self, reg: RegBase):
-    self.pools[type(reg)].insert(0, reg)
+  def return_reg(self, regs: list[RegBase]):
+    for reg in regs: self.pools[type(reg)].insert(0, reg)
 
   def move_var_to_stack(self, v: Variable):
     reg = v.reg
     assert reg
-    self.return_reg(reg)
+    self.return_reg([reg])
     assert reg is not None
     self._spill(reg)
     v.reg = None
@@ -454,7 +454,7 @@ def const(ctx, x):
     else: data_type = ".double"
     ctx.mem.append((label, f"{data_type} {x.arg}"))
     temp_reg = ctx.r.alloc(IReg, [reg])
-    ctx.r.return_reg(temp_reg)
+    ctx.r.return_reg([temp_reg])
     return [f"adrp {temp_reg}, {label}",
       f"ldr {reg_str}, [{temp_reg}, #:lo12:{label}]"]
   else:
@@ -519,13 +519,13 @@ def to_bool(ctx, x, a):
     regs = ctx.r.assign_multiple([x, a], reg_type=IReg)
     dst, src = regs
     temp_reg = ctx.r.alloc(excludes=regs, reg_type=reg_type)
-    ctx.r.return_reg(temp_reg)
+    ctx.r.return_reg([temp_reg])
   else:
     reg_type = FReg
     dst = ctx.r.assign(x, IReg)
     src = ctx.r.assign(a, FReg)
     temp_reg = ctx.r.alloc(FReg, [src])
-    ctx.r.return_reg(temp_reg)
+    ctx.r.return_reg([temp_reg])
   if Arch.arm:
     if dtypes.is_int(a.dtype):
       cmp = f"cmp {src}, #0"
@@ -562,8 +562,8 @@ def cmp_x86(ctx, x, a, b):
     src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
     temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
     temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
-  ctx.r.return_reg(temp_reg)
-  ctx.r.return_reg(temp_reg_2)
+  ctx.r.return_reg([temp_reg])
+  ctx.r.return_reg([temp_reg_2])
   size = a.dtype.itemsize
   if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
     mov_op = "mov"
@@ -597,8 +597,8 @@ def cmplt_int_x86(ctx, x, a, b):
   dst, src_a, src_b = regs
   temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
   temp_reg, temp_reg_2 = temp_regs
-  ctx.r.return_reg(temp_reg)
-  ctx.r.return_reg(temp_reg_2)
+  ctx.r.return_reg([temp_reg])
+  ctx.r.return_reg([temp_reg_2])
   size = a.dtype.itemsize
   mov_op = "mov"
   cmp_op = "cmp"
@@ -616,8 +616,7 @@ def cmplt_float_x86(ctx, x, a, b):
   src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
   temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
   temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
-  ctx.r.return_reg(temp_reg)
-  ctx.r.return_reg(temp_reg_2)
+  ctx.r.return_reg([temp_reg, temp_reg_2])
   size = a.dtype.itemsize
   cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
   mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
@@ -647,7 +646,7 @@ def recip_arm(ctx, x):
   assert x.src[0].dtype == dtypes.float32
   dst, src = ctx.r.assign_multiple([x, x.src[0]], FReg)
   temp_reg = ctx.r.alloc(FReg, [dst, src])
-  ctx.r.return_reg(temp_reg)
+  ctx.r.return_reg([temp_reg])
   return [f"fmov {temp_reg.render32()}, #1.0",
           f"fdiv {dst.render32()}, {temp_reg.render32()}, {src.render32()}"
           ]
