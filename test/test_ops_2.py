@@ -327,17 +327,14 @@ class TestOps(unittest.TestCase):
     helper_test_op([(2,)], lambda x: x.acosh(), grad_atol=1e-6)
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-3, grad_rtol=1e-2, low=-300, high=-297)
 
-  @unittest.skipUnless(os.environ.get("ACOSH"), "")
   def test_acosh_high(self):
     helper_test_op([(45,65)], lambda x: x.acosh(), grad_atol=1e-6, low=300, high=303)
 
-  @unittest.skipUnless(os.environ.get("LOG"), "")
   def test_log(self):
-    #helper_test_op([(45,65)], lambda x: x.log(), grad_atol=1e-6, low=300, high=303)
+    helper_test_op([(45,65)], lambda x: x.log(), grad_atol=1e-6, low=300, high=303)
     with Context(NOOPT=1):
       helper_test_op([(4,)], lambda x: x.log2(), grad_atol=1e-6)
 
-  @unittest.skipUnless(os.environ.get("TRANS"), "")
   def test_trans(self):
     with Context(NOOPT=1, TRANSCENDENTAL=1):
       helper_test_op([(4,)], lambda x: x.reciprocal(), grad_atol=1e-6)
