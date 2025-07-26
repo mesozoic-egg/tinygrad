@@ -549,29 +549,8 @@ def to_bool(ctx, x, a):
       f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
-def cmpne_float_x86(ctx, x, a, b):
-  reg_type = FReg
-  dst = ctx.r.assign(x, IReg)
-  src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
-  temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
-  temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
-  ctx.r.return_reg([temp_reg])
-  ctx.r.return_reg([temp_reg_2])
-  size = a.dtype.itemsize
-  cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
-  mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
-  set_op = "setb" if x.op is Ops.CMPLT else "setne"
-  return [
-    f"xor {temp_reg_2}, {temp_reg_2}",
-    f"xor {dst}, {dst}",
-    f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
-    f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-    f"setp {temp_reg_2.render8()}",
-    f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
-    f"or {dst}, {temp_reg_2}",
-  ]
 
-def cmpne_int_x86(ctx, x, a, b):
+def cmp_int_x86(ctx, x, a, b):
   reg_type=IReg
   regs = ctx.r.assign_multiple([x, a, b], IReg)
   dst, src_a, src_b = regs
@@ -590,32 +569,29 @@ def cmpne_int_x86(ctx, x, a, b):
     f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
   ]
 
-def cmplt_int_x86(ctx, x, a, b):
-  reg_type=IReg
-  regs = ctx.r.assign_multiple([x, a, b], IReg)
-  dst, src_a, src_b = regs
-  temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
-  temp_reg, temp_reg_2 = temp_regs
-  ctx.r.return_reg([temp_reg])
-  ctx.r.return_reg([temp_reg_2])
-  size = a.dtype.itemsize
-  mov_op = "mov"
-  cmp_op = "cmp"
-  set_op = "setl"
-  return [
-    f"xor {dst}, {dst}",
-    f"mov {temp_reg.render(size)}, {src_a.render(size)}",
-    f"cmp {temp_reg.render(size)}, {src_b.render(size)}",
-    f"setl {dst.render8()}",
-  ]
-
-def cmplt_float_x86(ctx, x, a, b):
-  reg_type = FReg
+def cmpne_float_x86(ctx, x, a, b):
   dst = ctx.r.assign(x, IReg)
   src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
   temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
   temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg([temp_reg, temp_reg_2])
+  size = a.dtype.itemsize
+  cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
+  mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
+  return [
+    f"xor {temp_reg_2}, {temp_reg_2}",
+    f"xor {dst}, {dst}",
+    f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+    f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}",
+    f"setp {temp_reg_2.render8()}",
+    f"setne {dst.render8()}",
+    f"or {dst}, {temp_reg_2}",
+  ]
+def cmplt_float_x86(ctx, x, a, b):
+  dst = ctx.r.assign(x, IReg)
+  src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
+  temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
+  ctx.r.return_reg([temp_reg])
   size = a.dtype.itemsize
   cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
   mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
@@ -721,15 +697,12 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(name="a"),)), to_bool),
 ])
 x86_rewrite = PatternMatcher([
-  (UPat((Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
+  (UPat((Ops.CMPNE, Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
-   cmplt_int_x86),
+   cmp_int_x86),
   (UPat((Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.floats),
                                   UPat(name="b"))),
    cmplt_float_x86),
-  (UPat((Ops.CMPNE), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
-                                  UPat(name="b"))),
-   cmpne_int_x86),
   (UPat((Ops.CMPNE), name="x", src=(UPat(name="a", dtype=dtypes.floats),
                                   UPat(name="b"))),
    cmpne_float_x86),
