@@ -549,47 +549,46 @@ def to_bool(ctx, x, a):
       f"setne {dst.render8()}", # set dst to 1 if ZF == 0 => src != 0
     ]
 
-def cmp_x86(ctx, x, a, b):
-  if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
-    reg_type=IReg
-    regs = ctx.r.assign_multiple([x, a, b], IReg)
-    dst, src_a, src_b = regs
-    temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
-    temp_reg, temp_reg_2 = temp_regs
-  else:
-    reg_type = FReg
-    dst = ctx.r.assign(x, IReg)
-    src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
-    temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
-    temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
+def cmpne_float_x86(ctx, x, a, b):
+  reg_type = FReg
+  dst = ctx.r.assign(x, IReg)
+  src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
+  temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
+  temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg([temp_reg])
   ctx.r.return_reg([temp_reg_2])
   size = a.dtype.itemsize
-  if dtypes.is_int(a.dtype) or dtypes.is_bool(a.dtype):
-    mov_op = "mov"
-    cmp_op = "cmp"
-    set_op = "setl" if x.op is Ops.CMPLT else "setne"
-  else:
-    cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
-    mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
-    set_op = "setb" if x.op is Ops.CMPLT else "setne"
-  if set_op == "setne" and reg_type == FReg:
-    return [
-      f"xor {temp_reg_2}, {temp_reg_2}",
-      f"xor {dst}, {dst}",
-      f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
-      f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-      f"setp {temp_reg_2.render8()}",
-      f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
-      f"or {dst}, {temp_reg_2}",
-    ]
-  else:
-    return [
-      f"xor {dst}, {dst}",
-      f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
-      f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
-      f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
-    ]
+  cmp_op = "ucomiss" if a.dtype.itemsize == 4 else "comisd"
+  mov_op = "movss" if a.dtype.itemsize == 4 else "movsd"
+  set_op = "setb" if x.op is Ops.CMPLT else "setne"
+  return [
+    f"xor {temp_reg_2}, {temp_reg_2}",
+    f"xor {dst}, {dst}",
+    f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+    f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+    f"setp {temp_reg_2.render8()}",
+    f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
+    f"or {dst}, {temp_reg_2}",
+  ]
+
+def cmpne_int_x86(ctx, x, a, b):
+  reg_type=IReg
+  regs = ctx.r.assign_multiple([x, a, b], IReg)
+  dst, src_a, src_b = regs
+  temp_regs = ctx.r.alloc_multiple(2, IReg, [src_a, src_b, dst])
+  temp_reg, temp_reg_2 = temp_regs
+  ctx.r.return_reg([temp_reg])
+  ctx.r.return_reg([temp_reg_2])
+  size = a.dtype.itemsize
+  mov_op = "mov"
+  cmp_op = "cmp"
+  set_op = "setl" if x.op is Ops.CMPLT else "setne"
+  return [
+    f"xor {dst}, {dst}",
+    f"{mov_op} {temp_reg.render(size)}, {src_a.render(size)}",
+    f"{cmp_op} {temp_reg.render(size)}, {src_b.render(size)}", #CF=1 => src_a < src_b, CF=0 => src_a >= src_b
+    f"{set_op} {dst.render8()}", #dst=1 if CF=1 => src_a < src_b
+  ]
 
 def cmplt_int_x86(ctx, x, a, b):
   reg_type=IReg
@@ -725,12 +724,15 @@ x86_rewrite = PatternMatcher([
   (UPat((Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
    cmplt_int_x86),
-  (UPat((Ops.CMPLT), name="x", src=(UPat(name="a"),
+  (UPat((Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.floats),
                                   UPat(name="b"))),
    cmplt_float_x86),
-  (UPat((Ops.CMPNE), name="x", src=(UPat(name="a"),
+  (UPat((Ops.CMPNE), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
-   cmp_x86),
+   cmpne_int_x86),
+  (UPat((Ops.CMPNE), name="x", src=(UPat(name="a", dtype=dtypes.floats),
+                                  UPat(name="b"))),
+   cmpne_float_x86),
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
