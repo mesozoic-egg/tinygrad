@@ -194,6 +194,7 @@ class Allocator:
     self.stack_size = 0
     self.cur_step = 0
     self.kernel: list[str] = []
+    self.tracked_regs: list[RegBase] = [IReg(2)]
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel
@@ -236,7 +237,10 @@ class Allocator:
     dst_var.reg = src_var.reg
 
   def return_reg(self, regs: list[RegBase]):
-    for reg in regs: self.pools[type(reg)].insert(0, reg)
+    for reg in regs:
+      if reg in self.tracked_regs:
+        print(f"\033[31m{reg=} back to pool\033[0m")
+      self.pools[type(reg)].insert(0, reg)
 
   def move_var_to_stack(self, v: Variable):
     reg = v.reg
@@ -327,7 +331,7 @@ class Allocator:
           del self.reserved[reg]
   def _spill(self, reg: RegBase) -> None:
     pool = self.pools[type(reg)]
-    vars = self._find_vars_holding_reg(reg)
+    vars = self.find_vars_holding_reg(reg)
     for var in vars:
       assert var.reg is not None
       if var.stack is None:
@@ -349,7 +353,7 @@ class Allocator:
     assert len(candidates) >= num, "Not enough registers to fulfill spill"
     candidates = candidates[:num]
     return candidates
-  def _find_vars_holding_reg(self, reg: RegBase) -> list[Variable]:
+  def find_vars_holding_reg(self, reg: RegBase) -> list[Variable]:
     vars: list[Variable] = []
     for v in self.uops.values():
       if v.reg == reg: vars.append(v)
@@ -695,13 +699,16 @@ def idiv(ctx, x):
   if Arch.x86:
     _dividend = ctx.r.assign_reg(IReg(0), dividend)
     _divisor = ctx.r.assign(divisor, reg_type=IReg)
-    _edx = [v for v in ctx.r.uops.values() if v.reg == IReg(2)]
     mov2 = None
-    if len(_edx) >= 1:
-      edx = _edx[0]
-      ctx.r.move_var_to_stack(edx)
-      mov2 = edx.load(IReg(2), "stack")
-    _mov = ctx.r.flush_kernel()
+    vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
+    if len(vars_holding_edx) >= 1:
+      var = vars_holding_edx[0]
+      ctx.r._spill(IReg(2))
+      _mov = ctx.r.flush_kernel()
+      mov2 = var.load(IReg(2))
+    else:
+      _mov = ctx.r.flush_kernel()
+
     ctx.r.uops[x].reg = IReg(0)
     ret = [
       *_mov,
