@@ -7,6 +7,7 @@ from tinygrad.helpers import getenv, IMAGE, DEBUG, CI, Context, TRANSCENDENTAL, 
 from tinygrad import Tensor, Device, dtypes
 from tinygrad.tensor import _to_np_dtype
 from tinygrad.device import is_dtype_supported
+from tinygrad.renderer.asm import Arch
 
 if getenv("TINY_BACKEND"):
   import tinygrad.frontend.torch # noqa: F401 # pylint: disable=unused-import
@@ -73,6 +74,11 @@ def prepare_test_op(low, high, shps, vals, forward_only=False):
   else:
     np.random.seed(0)
     np_data = [np.random.uniform(low=low, high=high, size=size).astype(_to_np_dtype(dtypes.default_float)) for size in shps]
+    if os.environ.get("INPUT_BYTES"):
+      print(f"{np_data=}")
+      b = np_data[0].tobytes()
+      print(f"{b=} {len(b)=}")
+      for _b in b: print(f"{_b:02x}", end=" ")
     ts = [torch.tensor(data, requires_grad=(not forward_only)) for data in np_data]
   for i in range(len(ts)):
     # NOTE: torch default int64 for python ints input
@@ -337,10 +343,19 @@ class TestOps(unittest.TestCase):
 
   def test_log2(self):
     with Context(NOOPT=0):
+      helper_test_op([(1,)], lambda x: x.log2(), grad_atol=1e-6)
+    with Context(NOOPT=1):
+      helper_test_op([(45,65)], lambda x: x.log2(), grad_atol=1e-6)
+
+  @unittest.skipUnless(Arch.arm or os.environ.get("LOG2_UNROLL"), "")
+  def test_log2_unroll(self):
+    with Context(NOOPT=0):
       helper_test_op([(4,)], lambda x: x.log2(), grad_atol=1e-6)
 
   def test_recip(self):
     with Context(NOOPT=1, TRANSCENDENTAL=1):
+      helper_test_op([(4,)], lambda x: x.reciprocal(), grad_atol=1e-6)
+    with Context(NOOPT=0, TRANSCENDENTAL=1):
       helper_test_op([(4,)], lambda x: x.reciprocal(), grad_atol=1e-6)
 
   def test_and(self):

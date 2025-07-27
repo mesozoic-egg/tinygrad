@@ -128,7 +128,6 @@ class Variable:
       return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
 
   def load(self, reg: RegBase, src: str="") -> list[str]:
-    assert self.reg is None
     self.reg = reg
     assert self.stack is not None
     if Arch.arm:
@@ -238,8 +237,10 @@ class Allocator:
              debug:bool=False,
              ) -> RegBase:
     var = self.uops[_key]
-    if var.reg is not None: return var.reg
-    reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
+    if var.reg is not None:
+      reg = var.reg
+    else:
+      reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
@@ -249,8 +250,8 @@ class Allocator:
     return self.assign(_key, IReg, excludes, reserve).render8()
   def assign_i32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, IReg, excludes, reserve).render32()
-  def assign_i64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
-    return self.assign(_key, IReg, excludes, reserve).render64()
+  def assign_i64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False, debug: bool = False):
+    return self.assign(_key, IReg, excludes, reserve, debug).render64()
   def assign_f32(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, FReg, excludes, reserve).render32()
   def assign_f64(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
@@ -959,7 +960,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/log/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/log2/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS
