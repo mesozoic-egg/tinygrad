@@ -97,12 +97,27 @@ class Variable:
     size: size in bytes (int32: 4, float64: 8)
     """
     self.uop, self.start, self.end = uop, start, end
-    self.reg: Optional[RegBase] = None
-    self.stack: Optional[int] = None
+    self._reg: Optional[RegBase] = None
+    self._stack: Optional[int] = None
     self.mem: Optional[str] = None
+    self.track_reg: bool = False
+    self.track_stack: bool = False
   
   @property
   def name(self): return repr(self.uop)[:100]
+
+  @property
+  def reg(self): return self._reg
+  @reg.setter
+  def reg(self, v: RegBase):
+    if self.track_reg:
+      print(f"\033[31m{v} -> {self=}\033[0m")
+      print(f"\t{oneline_uop(self.uop)}")
+    self._reg = v
+  @property
+  def stack(self): return self._stack
+  @stack.setter
+  def stack(self, v: int): self._stack = v
 
   def __repr__(self):
     location = f" reg:{self.reg}" if self.reg is not None else f" stack:{self.stack}" if self.stack is not None else ""
@@ -239,6 +254,7 @@ class Allocator:
     var = self.uops[_key]
     if var.reg is not None:
       reg = var.reg
+      return reg
     else:
       reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
     if var.stack is not None:
