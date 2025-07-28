@@ -128,7 +128,18 @@ class TestOps(unittest.TestCase):
     #print(grid_y.numpy())
 
   def test_arange(self):
-    print(Tensor.arange(100).numpy())
+    helper_test_op([], lambda: torch.arange(10, dtype=torch.int32), lambda: Tensor.arange(10), forward_only=True)
+    helper_test_op([], lambda: torch.arange(36, dtype=torch.int32), lambda: Tensor.arange(36), forward_only=True)
+    helper_test_op([], lambda: torch.arange(5, 10, 3, dtype=torch.int32), lambda: Tensor.arange(5, 10, 3), forward_only=True)
+    helper_test_op([], lambda: torch.arange(10, 5, -3, dtype=torch.int32), lambda: Tensor.arange(10, 5, -3), forward_only=True)
+    helper_test_op([], lambda: torch.arange(11, 5, -3, dtype=torch.int32), lambda: Tensor.arange(11, 5, -3), forward_only=True)
+    helper_test_op([], lambda: torch.arange(1, 78, 2, dtype=torch.int32), lambda: Tensor.arange(1, 78, 2), forward_only=True)
+
+  def test_arange_float(self):
+    helper_test_op([], lambda: torch.arange(5.5, 175.5, 2.5), lambda: Tensor.arange(5.5, 175.5, 2.5), forward_only=True)
+    end = 164 #164 would fail, 163 passes
+    helper_test_op([], lambda: torch.arange(5.5, end, 2.5),
+                   lambda: Tensor.arange(5.5, end, 2.5), forward_only=True)
 
   def test_linespace(self):
     print(Tensor.linspace(5, 10, 3).numpy())

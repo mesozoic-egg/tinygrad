@@ -102,6 +102,8 @@ class Variable:
     self.mem: Optional[str] = None
     self.track_reg: bool = False
     self.track_stack: bool = False
+    if uop.op == Ops.RANGE:
+      self.track_reg = True
   
   @property
   def name(self): return repr(self.uop)[:100]
@@ -113,6 +115,7 @@ class Variable:
     if self.track_reg:
       print(f"\033[31m{v} -> {self=}\033[0m")
       print(f"\t{oneline_uop(self.uop)}")
+      print(f"====")
     self._reg = v
   @property
   def stack(self): return self._stack
@@ -194,7 +197,7 @@ class Allocator:
     self.stack_size = 0
     self.cur_step = 0
     self.kernel: list[str] = []
-    self.tracked_regs: list[RegBase] = [IReg(2)]
+    self.tracked_regs: list[RegBase] = [IReg(3)]
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel
@@ -697,7 +700,8 @@ def _where(ctx, x):
 def idiv(ctx, x):
   dividend, divisor = x.src
   if Arch.x86:
-    _dividend = ctx.r.assign_reg(IReg(0), dividend)
+    _dividend = ctx.r.assign(dividend, reg_type=IReg)
+    _x = ctx.r.assign_reg(IReg(0), x)
     _divisor = ctx.r.assign(divisor, reg_type=IReg)
     mov2 = None
     vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
@@ -708,10 +712,10 @@ def idiv(ctx, x):
       mov2 = var.load(IReg(2))
     else:
       _mov = ctx.r.flush_kernel()
-
     ctx.r.uops[x].reg = IReg(0)
     ret = [
       *_mov,
+      f"mov rax, {_dividend.render64()}",
       "cdq",
       f"idiv {_divisor.render32()}",
     ]
@@ -983,7 +987,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/log2/kernel.s", "wt") as f: f.write(ret)
+      with open("../tg-dev/arange_f/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS
