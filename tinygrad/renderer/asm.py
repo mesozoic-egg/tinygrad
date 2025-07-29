@@ -140,13 +140,24 @@ class Variable:
     assert self.stack is not None
     note = f""
     if Arch.arm:
-      if self.stack > 255:
-        sp = "x30"
-        stack = self.stack - 255
+      sp = "x29"
+      if self.stack > 512:
+        sub = [f"sub x29, x29, #512"]
+        add = [f"add x29, x29, #512"]
+        stack = self.stack - 512
+      elif self.stack > 256:
+        sub = [f"sub x29, x29, #256"]
+        add = [f"add x29, x29, #256"]
+        stack = self.stack - 256
       else:
-        sp = "x29"
         stack = self.stack
-      return [f"str {self.reg.render64()}, [{sp}, #-{stack}]"]
+        sub, add = [], []
+
+      return [
+        *sub,
+        f"str {self.reg.render64()}, [{sp}, #-{stack}]",
+        *add,
+      ]
     else:
       if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
         op = "mov"
@@ -158,13 +169,24 @@ class Variable:
     self.reg = reg
     assert self.stack is not None
     if Arch.arm:
-      if self.stack > 255:
-        sp = "x30"
-        stack = self.stack - 255
+      sp = "x29"
+      if self.stack > 512:
+        sub = [f"sub x29, x29, #512"]
+        add = [f"add x29, x29, #512"]
+        stack = self.stack - 512
+      elif self.stack > 256:
+        sub = [f"sub x29, x29, #256"]
+        add = [f"add x29, x29, #256"]
+        stack = self.stack - 256
       else:
-        sp = "x29"
         stack = self.stack
-      return [f"ldr {reg.render64()}, [{sp}, #-{stack}]"]
+        sub, add = [], []
+
+      return [
+        *sub,
+        f"ldr {reg.render64()}, [{sp}, #-{stack}]",
+        *add,
+      ]
     else:
       if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
         op = "mov"
