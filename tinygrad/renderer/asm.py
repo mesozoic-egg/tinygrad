@@ -735,15 +735,20 @@ def idiv(ctx, x):
     ]
     return ret
 
-def x86_max_int(ctx, x):
+def max_int(ctx, x):
   src1, src2 = x.src
-  dst, _src1, _src2 = ctx.r.assign_multiple([x, src1, src2], IReg)
+  _dst, _src1, _src2 = ctx.r.assign_multiple([x, src1, src2], IReg)
   size = x.dtype.itemsize
-  return [
-    f"mov {dst.render(size)}, {_src1.render(size)}",
-    f"cmp {_src1.render(size)}, {_src2.render(size)}",
-    f"cmovl {dst.render(size)}, {_src2.render(size)}",
-  ]
+  if Arch.arm:
+    return [f"cmp {_src1.render(size)}, {_src2.render(size)}",
+            f"csel {_dst.render(size)}, {_src1.render(size)}, {_src2.render(size)}, gt"
+            ]
+  else:
+    return [
+      f"mov {_dst.render(size)}, {_src1.render(size)}",
+      f"cmp {_src1.render(size)}, {_src2.render(size)}",
+      f"cmovl {_dst.render(size)}, {_src2.render(size)}",
+    ]
 
 def cast_bool_to_int(ctx, x, a):
   _x, _a = ctx.r.assign_multiple([x, a], IReg)
@@ -763,8 +768,7 @@ def cast_bool_to_int(ctx, x, a):
     ]
 
 complex_rewrites = PatternMatcher([
-  #(UPat(Ops.CAST, dtype=dtypes.int, name="x", src=(UPat(name="a", dtype=dtypes.bool),)),
-  # cast_bool_to_int),
+  (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.IDIV, name="x"), idiv),
@@ -779,7 +783,6 @@ complex_rewrites = PatternMatcher([
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
 ])
 x86_rewrite = PatternMatcher([
-  (UPat(Ops.MAX, name="x", dtype=dtypes.ints), x86_max_int),
   (UPat((Ops.CMPNE, Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
    cmp_int_x86),
