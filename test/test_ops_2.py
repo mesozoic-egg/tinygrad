@@ -77,8 +77,8 @@ def prepare_test_op(low, high, shps, vals, forward_only=False):
     if os.environ.get("INPUT_BYTES"):
       print(f"{np_data=}")
       b = np_data[0].tobytes()
-      print(f"{b=} {len(b)=}")
-      for _b in b: print(f"{_b:02x}", end=" ")
+      for _b in b: print(f"{_b:#x}", end=" ")
+      print()
     ts = [torch.tensor(data, requires_grad=(not forward_only)) for data in np_data]
   for i in range(len(ts)):
     # NOTE: torch default int64 for python ints input
@@ -140,24 +140,34 @@ class TestOps(unittest.TestCase):
     end = 164 #164 would fail, 163 passes
     helper_test_op([], lambda: torch.arange(5.5, end, 2.5),
                    lambda: Tensor.arange(5.5, end, 2.5), forward_only=True)
+
   def test_argmax(self):
     # check if it returns the first index for multiple occurences
     helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[2, 2]])
-    #helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[1, 2, 2]])
-    #np.testing.assert_equal(Tensor([2,2]).argmax().numpy(), 0)
-    #np.testing.assert_equal(Tensor([1,2,2]).argmax().numpy(), 1)
-    #helper_test_op([(10,20)], lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True)
-    #helper_test_op([(10,20)], lambda x: x.argmax(0, False).type(torch.int32), lambda x: x.argmax(0, False), forward_only=True)
-    #helper_test_op([(10,20)], lambda x: x.argmax(1, False).type(torch.int32), lambda x: x.argmax(1, False), forward_only=True)
-    #helper_test_op([(10,20)], lambda x: x.argmax(1, True).type(torch.int32), lambda x: x.argmax(1, True), forward_only=True)
-    ## regression test for bitwise_not then argmax
-    #helper_test_op(None, lambda x: (~x).argmax().type(torch.int32), lambda x: (~x).argmax(), forward_only=True, vals=[[2, 2]])
+    helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[1, 2, 2]])
+    np.testing.assert_equal(Tensor([2,2]).argmax().numpy(), 0)
+    np.testing.assert_equal(Tensor([1,2,2]).argmax().numpy(), 1)
+    helper_test_op([(10,20)], lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True)
+    helper_test_op([(10,20)], lambda x: x.argmax(0, False).type(torch.int32), lambda x: x.argmax(0, False), forward_only=True)
+    helper_test_op([(10,20)], lambda x: x.argmax(1, False).type(torch.int32), lambda x: x.argmax(1, False), forward_only=True)
+    helper_test_op([(10,20)], lambda x: x.argmax(1, True).type(torch.int32), lambda x: x.argmax(1, True), forward_only=True)
+    helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[0, -2**31]])
+    helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[-2**31, 0]])
+    helper_test_op(None, lambda x: x.type(torch.int32).argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[False, True]])
+    helper_test_op(None, lambda x: x.type(torch.int32).argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[True, False]])
+    helper_test_op(None, lambda x: (~x).argmax().type(torch.int32), lambda x: (~x).argmax(), forward_only=True, vals=[[2, 2]])
 
-    #helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[0, -2**31]])
-    #helper_test_op(None, lambda x: x.argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[-2**31, 0]])
-    ## NOTE: torch does not support this on bool
-    #helper_test_op(None, lambda x: x.type(torch.int32).argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[False, True]])
-    #helper_test_op(None, lambda x: x.type(torch.int32).argmax().type(torch.int32), lambda x: x.argmax(), forward_only=True, vals=[[True, False]])
+  def test_max(self):
+    helper_test_op([(45,3)], lambda x: x.max())
+    helper_test_op([(45,3)], lambda x: x.max().mul(0.5))
+    helper_test_op(None, lambda x: x.max().mul(0.5), vals=[[[1.0,1.0,0.0,1.0]],])
+    helper_test_op(None, lambda x: x.max().mul(0.5), vals=[[[1.0,1.0,0.0,1.0]],])
+    helper_test_op([(3,4,5,6)], lambda x: x.max(axis=1)[0], lambda x: x.max(axis=1))
+    helper_test_op([()], lambda x: x.max())
+    helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[False, True]])
+    helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[True, False]])
+    helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[0, -2**31]])
+    helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[-2**31, 0]])
 
 
   def test_linespace(self):
