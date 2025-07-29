@@ -195,7 +195,7 @@ class Allocator:
     self.stack_size = 0
     self.cur_step = 0
     self.kernel: list[str] = []
-    self.tracked_regs: list[RegBase] = [IReg(3)]
+    self.tracked_regs: list[RegBase] = []
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel

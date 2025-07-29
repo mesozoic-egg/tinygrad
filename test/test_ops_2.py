@@ -169,6 +169,22 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[0, -2**31]])
     helper_test_op(None, lambda x: x.max(), forward_only=True, vals=[[-2**31, 0]])
 
+  def test_argsort(self):
+    for dim in [-1, 0, 1]:
+      for descending in [True, False]:
+        helper_test_op([(8,8,6)], lambda x: torch.argsort(x, dim=dim, descending=descending, stable=True).type(torch.int32),
+                                  lambda x: x.argsort(dim, descending), forward_only=True)
+
+  @unittest.skipUnless(os.environ.get("ARGSORT"), "")
+  def test_argsort2(self):
+    dim = -1
+    descending=True
+    shape = (8,8,6)
+    #shape = (8,8,6)
+
+    helper_test_op([shape], lambda x: torch.argsort(x, dim=dim, descending=descending, stable=True).type(torch.int32),
+                              lambda x: x.argsort(dim, descending), forward_only=True)
+
 
   def test_linespace(self):
     print(Tensor.linspace(5, 10, 3).numpy())
