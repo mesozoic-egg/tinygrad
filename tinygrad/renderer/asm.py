@@ -743,7 +743,26 @@ def x86_max_int(ctx, x):
     f"cmovg {dst.render(size)}, {_src2.render(size)}",
   ]
 
+def cast_bool_to_int(ctx, x, a):
+  _x, _a = ctx.r.assign_multiple([x, a], IReg)
+  temp_reg = ctx.r.alloc(IReg, excludes=[_x, _a])
+  ctx.r.return_reg([temp_reg])
+  if Arch.arm:
+    return [
+      f"cmp {_a.render32()}, xzr",
+      f"cset {_x.render32()}, eq"
+    ]
+  else:
+    return [
+      f"xor {temp_reg}, {temp_reg}",
+      f"xor {_x}, {_x}",
+      f"cmp {_a.render32()}, {temp_reg.render32()}",
+      f"sete {_x.render8()}",
+    ]
+
 complex_rewrites = PatternMatcher([
+  (UPat(Ops.CAST, dtype=dtypes.int, name="x", src=(UPat(name="a", dtype=dtypes.bool),)),
+   cast_bool_to_int),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.IDIV, name="x"), idiv),
