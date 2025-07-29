@@ -423,6 +423,10 @@ AluOps = _AluOps({
   (Ops.AND,): "and",
   (Ops.OR, ArchType.X86): "or",
   (Ops.OR, ArchType.ARM): "orr",
+  (Ops.MAX, ArchType.ARM, FReg, 32): "fmax",
+  (Ops.MAX, ArchType.ARM, IReg): "smax",
+  (Ops.MAX, ArchType.X86, FReg, 32): "maxss",
+  (Ops.MAX, ArchType.X86, FReg, 64): "maxsd",
 })
 
 def alu(ctx, x):
@@ -729,6 +733,15 @@ def idiv(ctx, x):
     ]
     return ret
 
+def x86_max_int(ctx, x):
+  src1, src2 = x.src
+  dst, _src1, _src2 = ctx.r.assign_multiple([x, src1, src2], IReg)
+  size = x.dtype.itemsize
+  return [
+    f"mov {dst.render(size)}, {_src1.render(size)}",
+    f"cmp {_src1.render(size)}, {_src2.render(size)}",
+    f"cmovg {dst.render(size)}, {_src2.render(size)}",
+  ]
 
 complex_rewrites = PatternMatcher([
   (UPat(Ops.RECIP, name="x"), recip), 
@@ -743,6 +756,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.bool, src=(UPat(name="a"),)), to_bool),
 ])
 x86_rewrite = PatternMatcher([
+  (UPat(Ops.MAX, name="x", dtype=dtypes.ints), x86_max_int),
   (UPat((Ops.CMPNE, Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
    cmp_int_x86),
