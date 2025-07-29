@@ -767,7 +767,39 @@ def cast_bool_to_int(ctx, x, a):
       f"sete {_x.render8()}",
     ]
 
+def gated_load(ctx, x, bidx, alt, gate):
+  reg_type = FReg if dtypes.is_float(x.dtype) else IReg
+  _x, _alt = ctx.r.assign_multiple([x, alt], reg_type=reg_type)
+  _gate, _bidx = ctx.r.assign_multiple([gate, bidx], reg_type=IReg, excludes=[_x, _alt])
+  step = ctx.r.cur_step
+  size = x.dtype.itemsize
+  if Arch.x86:
+    op = "mov" if reg_type is IReg else "movss" if size == 4 else "movsd"
+    return [
+      f"cmp {_gate}, 1",
+      f"jne .ALT{step}",
+      f"{op} {_x.render(size)}, [{_bidx}]",
+      f"jmp .END{step}",
+      f".ALT{step}:",
+      f"{op} {_x.render(size)}, {_alt.render(size)}",
+      f".END{step}:",
+      ]
+  else:
+    op = "mov" if reg_type is IReg else "fmov"
+    return [
+      f"cmp {_gate}, #1",
+      f"b.ne .ALT{step}",
+      f"{op} {_x.render(size)}, [{_bidx}]",
+      f"b .END{step}",
+      f".ALT{step}:",
+      f"{op} {_x.render(size)}, {_alt.render(size)}",
+      f".END{step}:",
+    ]
+
+
 complex_rewrites = PatternMatcher([
+  (UPat(Ops.LOAD, name="x", src=(UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"), UPat.var("alt")), allow_any_len=True),
+   gated_load),
   (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
@@ -951,6 +983,13 @@ class AsmRenderer(Renderer):
         if src.dtype is not dtypes.void:
           prev = var_intervals[src].end
           var_intervals[src].end = max(prev, i)
+
+    for i, u in enumerate(uops):
+      for src in u.src:
+        if src.op is Ops.INDEX and len(src.src) > 2:
+          gate = src.src[2]
+          var_intervals[gate].end = var_intervals[src].end
+
     for v in var_intervals.values():
       if v.end == -1: v.end = len(uops)
     self.r.uops = var_intervals

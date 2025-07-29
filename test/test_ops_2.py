@@ -9,6 +9,11 @@ from tinygrad.tensor import _to_np_dtype
 from tinygrad.device import is_dtype_supported
 from tinygrad.renderer.asm import Arch
 
+def skipU(flag: str):
+  if os.environ.get(flag):
+    return lambda func: func
+  return unittest.skip("")
+
 if getenv("TINY_BACKEND"):
   import tinygrad.frontend.torch # noqa: F401 # pylint: disable=unused-import
   torch.set_default_device("tiny")
@@ -174,16 +179,6 @@ class TestOps(unittest.TestCase):
       for descending in [True, False]:
         helper_test_op([(8,8,6)], lambda x: torch.argsort(x, dim=dim, descending=descending, stable=True).type(torch.int32),
                                   lambda x: x.argsort(dim, descending), forward_only=True)
-
-  @unittest.skipUnless(os.environ.get("ARGSORT"), "")
-  def test_argsort2(self):
-    dim = -1
-    descending=True
-    shape = (8,8,6)
-    #shape = (8,8,6)
-
-    helper_test_op([shape], lambda x: torch.argsort(x, dim=dim, descending=descending, stable=True).type(torch.int32),
-                              lambda x: x.argsort(dim, descending), forward_only=True)
 
 
   def test_linespace(self):
@@ -431,6 +426,19 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, lambda x: x.all(), vals=[[True, False]], forward_only=True)
     helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
     helper_test_op([()], lambda x: x.all(), forward_only=True)
+
+  def test_avg_pool2d(self):
+    shape = (32,2,111,28)
+    for ksz in [(2,2), (3,3), (3,2), (5,5), (5,1)]:
+      with self.subTest(kernel_size=ksz):
+        helper_test_op([shape],
+          lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz),
+          lambda x: Tensor.avg_pool2d(x, kernel_size=ksz), rtol=1e-5)
+
+    # regression test for https://github.com/tinygrad/tinygrad/pull/7581
+    helper_test_op([(1,1,8,8)],
+      lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)),
+      lambda x: Tensor.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)), rtol=1e-5)
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
