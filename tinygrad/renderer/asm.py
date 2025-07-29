@@ -96,12 +96,14 @@ class Variable:
           start and end are both inclusive. 
     size: size in bytes (int32: 4, float64: 8)
     """
-    self.uop, self.start, self.end = uop, start, end
+    self.uop, self.start = uop, start
+    self._end = end
     self._reg: Optional[RegBase] = None
     self._stack: Optional[int] = None
     self.mem: Optional[str] = None
     self.track_reg: bool = False
     self.track_stack: bool = False
+    self.track_var_end: bool = False
   
   @property
   def name(self): return repr(self.uop)[:100]
@@ -119,6 +121,15 @@ class Variable:
   def stack(self): return self._stack
   @stack.setter
   def stack(self, v: int): self._stack = v
+  
+  @property
+  def end(self): return self._end
+  @end.setter
+  def end(self, v: int):
+    prev = self._end
+    self._end = v
+    if self.track_var_end:
+      print(f"\033[31m Interval end :{prev=} -> {self._end=} {self.uop}\033[0m\n")
 
   def __repr__(self):
     location = f" reg:{self.reg}" if self.reg is not None else f" stack:{self.stack}" if self.stack is not None else ""
@@ -461,8 +472,9 @@ def alu(ctx, x):
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
+  reg_type = FReg if dtypes.is_float(acc.dtype) else IReg
   _acc = ctx.r.uops[acc].reg.render(dtype.itemsize)
-  _src = ctx.r.uops[src].reg.render(dtype.itemsize)
+  _src = ctx.r.assign(src, reg_type=reg_type).render(dtype.itemsize)
   ctx.r.share(x, acc)
   reg_type = IReg if dtypes.is_int(dtype) else FReg
   operator = AluOps.get((Ops.ADD, Arch.arch, reg_type, 8*x.dtype.itemsize))
@@ -988,16 +1000,18 @@ class AsmRenderer(Renderer):
       for src in u.src:
         if src.op is Ops.INDEX and len(src.src) > 2:
           gate = src.src[2]
-          var_intervals[gate].end = var_intervals[src].end
+          var_intervals[gate].end = max(var_intervals[gate].end, var_intervals[src].end)
 
     for v in var_intervals.values():
       if v.end == -1: v.end = len(uops)
     self.r.uops = var_intervals
+    if DEBUG.value >= 6:
+      for i, u in enumerate(uops):
+        v = r.uops[u]
+        print(i, v, oneline_uop(u))
     if Arch.x86:
       r.pools[IReg].pop(r.pools[IReg].index(IReg(5)))
 
-    if DEBUG.value >= 6:
-      for _u, v in r.uops.items(): print(v, oneline_uop(_u))
     for i,u in enumerate(uops):
       self.r.cur_step = i
       if DEBUG.value >= 6:

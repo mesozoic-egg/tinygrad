@@ -440,6 +440,25 @@ class TestOps(unittest.TestCase):
       lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)),
       lambda x: Tensor.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)), rtol=1e-5)
 
+  @skipU("POOL_CEIL")
+  def test_avg_pool2d_ceil_mode(self):
+    shape = (1,1,6,6)
+    ksz = 4
+    with self.subTest(kernel_size=ksz):
+      helper_test_op([shape],
+        lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True),
+        lambda x: Tensor.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True), rtol=1e-5)
+
+  def test_avg_pool2d_ceil_mode_2(self):
+    shape = (1,1,6,6)
+    for ksz in [(3,3), 3, (3,2), 4]:
+      with self.subTest(kernel_size=ksz):
+        helper_test_op([shape],
+          lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True),
+          lambda x: Tensor.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True), rtol=1e-5)
+
+
+
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
   t0 = time.time()
