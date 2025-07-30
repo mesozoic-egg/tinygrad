@@ -476,7 +476,11 @@ def alu(ctx, x):
   _dst = dst.render(dtype.itemsize)
   src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
   if Arch.arm:
-    return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
+    if dtype.itemsize < 4:
+      clear_op = "mov" if reg_type is IReg else "fmov"
+      clear = [f"mov {_dst}, xzr"]
+    else: clear = []
+    return [*clear, f"{operator} {_dst}, {', '.join(src_regs_str)}"]
   else:
     _mov = "mov" if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else "movss" 
     if dst == src_regs[0] and len(src_regs_str) == 2:
