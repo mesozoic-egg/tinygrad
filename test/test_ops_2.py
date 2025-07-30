@@ -459,6 +459,28 @@ class TestOps(unittest.TestCase):
     with self.assertRaises(ValueError):
       Tensor.avg_pool2d(Tensor.randn((32,2,111,28)), kernel_size=(2,2), padding=(1,1,1))
 
+  #no candidates left
+  @skipU("POOL")
+  def test_pool_sum(self):
+    shape = [(1,1,16,16,16)]
+    x, x2 = prepare_test_op(-2, 2, shape, True)
+    x2 = x2[0]
+    padding = [1,1,1,1,1,1]
+    axis = (-3, -2, -1)
+    kernel_size = (8,8,8)
+    stride = 5
+    dilation = 1
+    x2.ones_like().pad(padding)._pool(kernel_size, stride, dilation).sum(axis).realize()
+    #y = Tensor.avg_pool2d(x2, kernel_size=(8,8,8), stride=5, padding=1, count_include_pad=False)
+    #y.realize()
+
+  @skipU("MANUAL")
+  def test_manual(self):
+    with Context(NOOPT=0):
+      helper_test_op([(1,1,16,16,16)],
+        lambda x: torch.nn.functional.avg_pool3d(x, kernel_size=(8,8,8), stride=5, padding=1, count_include_pad=False),
+        lambda x: Tensor.avg_pool2d(x, kernel_size=(8,8,8), stride=5, padding=1, count_include_pad=False), rtol=1e-5, forward_only=True)
+
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
