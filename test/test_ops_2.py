@@ -479,10 +479,50 @@ class TestOps(unittest.TestCase):
         lambda x: torch.nn.functional.avg_pool3d(x, kernel_size=(8,8,8), stride=5, padding=1, count_include_pad=False),
         lambda x: Tensor.avg_pool2d(x, kernel_size=(8,8,8), stride=5, padding=1, count_include_pad=False), rtol=1e-5, forward_only=True)
 
+  def test_sigmoid(self):
+    helper_test_op([(45,65)], torch.sigmoid, Tensor.sigmoid)
+  def test_sigmoid_extreme(self):
+    helper_test_op([(45,65)], torch.sigmoid, Tensor.sigmoid, low=300, high=400)
+    helper_test_op([(45,65)], torch.sigmoid, Tensor.sigmoid, low=-400, high=-300)
+    x = Tensor([300.0])
+    self.assertAlmostEqual(x.sigmoid()[0].gradient(x)[0].item(), 0.0)
+    x = Tensor([-300.0])
+    self.assertAlmostEqual(x.sigmoid()[0].gradient(x)[0].item(), 0.0)
+
+  def test_sigmoid_alt_extreme(self):
+    def sigmoid(x:Tensor): return x.exp() / (1 + x.exp())
+    x = Tensor([300.0])
+    self.assertAlmostEqual(sigmoid(x)[0].gradient(x)[0].item(), 0.0)
+    x = Tensor([-300.0])
+    self.assertAlmostEqual(sigmoid(x)[0].gradient(x)[0].item(), 0.0)
+
+  def test_logsigmoid(self):
+    helper_test_op([(45,65)], torch.nn.functional.logsigmoid, Tensor.logsigmoid)
+    helper_test_op([()], torch.nn.functional.logsigmoid, Tensor.logsigmoid)
+
+  def test_hardsigmoid(self):
+    helper_test_op([(45,65)], torch.nn.functional.hardsigmoid, Tensor.hardsigmoid)
+    helper_test_op([()], torch.nn.functional.hardsigmoid, Tensor.hardsigmoid)
+  def test_hardsigmoid_extreme(self):
+    helper_test_op([(45,65)], torch.sigmoid, Tensor.sigmoid, low=300, high=400)
+    helper_test_op([(45,65)], torch.sigmoid, Tensor.sigmoid, low=-400, high=-300)
+  def test_softplus(self):
+    helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6)
+    helper_test_op([(45,65)], lambda t: torch.nn.functional.softplus(t, beta=3), lambda t: Tensor.softplus(t, beta=3), grad_atol=1e-6)
+    helper_test_op([(45,65)], lambda t: torch.nn.functional.softplus(t, beta=1/3), lambda t: Tensor.softplus(t, beta=1/3), grad_atol=1e-6)
+    # # TODO: support threshold and enable this
+    # helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6, low=300, high=400)
+    helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6, low=-400, high=-300)
+    helper_test_op([()], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6)
   @skipU("MANUAL")
   def test_manual(self):
-    pass
-
+    r = "none"
+    #shape = [(32, 10), (32, 10)]
+    shape = [(4, 5), (4, 5)]
+    x1, x2 = prepare_test_op(-2, 2, shape, True)
+    x, y = x2
+    x.sigmoid().binary_crossentropy(y.clip(0,1), reduction=r).realize()
+    return
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
