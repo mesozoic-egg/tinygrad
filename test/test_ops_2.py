@@ -514,14 +514,16 @@ class TestOps(unittest.TestCase):
     # helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6, low=300, high=400)
     helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6, low=-400, high=-300)
     helper_test_op([()], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6)
+
   @skipU("MANUAL")
   def test_manual(self):
     r = "none"
     #shape = [(32, 10), (32, 10)]
-    shape = [(4, 5), (4, 5)]
+    shape = [(5,4), (5,4)]
     x1, x2 = prepare_test_op(-2, 2, shape, True)
     x, y = x2
-    x.sigmoid().binary_crossentropy(y.clip(0,1), reduction=r).realize()
+    with Context(NOOPT=0):
+      x.sigmoid().binary_crossentropy(y.clip(0,1), reduction=r).realize()
     return
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:

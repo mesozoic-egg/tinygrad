@@ -734,26 +734,26 @@ def _where(ctx, x):
 def idiv(ctx, x):
   dividend, divisor = x.src
   if Arch.x86:
-    _dividend = ctx.r.assign(dividend, reg_type=IReg)
-    _x = ctx.r.assign_reg(IReg(0), x)
-    _divisor = ctx.r.assign(divisor, reg_type=IReg)
-    mov2 = None
+    vars_holding_eax = ctx.r.find_vars_holding_reg(IReg(0))
     vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
+    mov2 = []
+    if len(vars_holding_eax) >= 1:
+      var = vars_holding_eax[0]
+      ctx.r._spill(IReg(0))
+      mov2.extend(var.load(IReg(0)))
     if len(vars_holding_edx) >= 1:
       var = vars_holding_edx[0]
       ctx.r._spill(IReg(2))
-      _mov = ctx.r.flush_kernel()
-      mov2 = var.load(IReg(2))
-    else:
-      _mov = ctx.r.flush_kernel()
-    ctx.r.uops[x].reg = IReg(0)
+      mov2.extend(var.load(IReg(2)))
+    _dividend, _divisor, _dst = ctx.r.assign_multiple([dividend, divisor, x],
+                                                reg_type=IReg, excludes=[IReg(0), IReg(2)])
     ret = [
-      *_mov,
       f"mov rax, {_dividend.render64()}",
       "cdq",
       f"idiv {_divisor.render32()}",
+      f"mov {_dst}, rax",
+      *mov2,
     ]
-    if mov2: ret += mov2
     return ret
   else:
     _dividend, _divisor, _quotient = ctx.r.assign_multiple(
@@ -1052,7 +1052,7 @@ class AsmRenderer(Renderer):
         l = cast(list[str], l)
         l = [*r.flush_kernel(), *l, ""]
         if DEBUG.value >= 6:
-          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:30]
+          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:]
           l = [*uop_str, *l]
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
