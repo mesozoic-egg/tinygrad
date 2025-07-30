@@ -275,7 +275,7 @@ class Allocator:
   def share(self, dst: UOp, src: UOp):
     dst_var, src_var = self.uops[dst], self.uops[src]
     reg = src_var.reg
-    assert reg, f"Source UOp must already been assigned to register {src}"
+    assert reg, f"Source UOp must already been assigned to register {src} {reg=}"
     dst_var.reg = reg
 
   def return_reg(self, regs: list[RegBase]):
@@ -390,7 +390,7 @@ class Allocator:
     candidates = [(u,v) for u, v in candidates if v.reg not in self.reserved]
     candidates = [(u,v) for u, v in candidates if v.reg not in self.blocked]
     candidates = [(u,v) for u, v in candidates if v.reg not in excludes]
-    assert len(candidates), "no candidates left"
+    assert len(candidates), f"no candidates left {reg_type=} {self.reserved=}"
     candidates = sorted(candidates, key=lambda u_v: u_v[1].end, reverse=True)
     assert len(candidates) >= num, "Not enough registers to fulfill spill"
     candidates = candidates[:num]
@@ -505,8 +505,8 @@ def alu(ctx, x):
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
   reg_type = FReg if dtypes.is_float(acc.dtype) else IReg
-  _acc = ctx.r.uops[acc].reg.render(dtype.itemsize)
-  _src = ctx.r.assign(src, reg_type=reg_type).render(dtype.itemsize)
+  acc_reg, src_reg = ctx.r.assign_multiple([acc, src], reg_type=reg_type)
+  _acc, _src = acc_reg.render(dtype.itemsize), src_reg.render(dtype.itemsize)
   ctx.r.share(x, acc)
   reg_type = IReg if dtypes.is_int(dtype) else FReg
   operator = AluOps.get((Ops.ADD, Arch.arch, reg_type, 8*x.dtype.itemsize))
@@ -577,7 +577,7 @@ def _index(ctx, x):
 
 def assign(ctx, x):
   reg_type = IReg if dtypes.is_int(x.src[0].dtype) or dtypes.is_bool(x.src[0].dtype) else FReg
-  x_src_0_reg = ctx.r.uops[x.src[0]].reg
+  x_src_0_reg = ctx.r.assign(x.src[0], reg_type=reg_type)
   ctx.r.share(x, x.src[0])
   dst, src = ctx.r.assign_multiple([x, x.src[1]], excludes=[x_src_0_reg], reg_type=reg_type)
   
@@ -888,15 +888,15 @@ x86_rewrite = PatternMatcher([
       lambda ctx, x, addr, src: [f"movsd [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f64(src)}"]),
 
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.bool, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=True)}, {ctx.r.assign_i64(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=False)}, {ctx.r.assign_i64(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"movss {ctx.r.assign_f32(x, reserve=True)}, {ctx.r.assign_f32(src)}"]),
+      lambda ctx, x, src: [f"movss {ctx.r.assign_f32(x, reserve=False)}, {ctx.r.assign_f32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"movsd {ctx.r.assign_f64(x, reserve=True)}, {ctx.r.assign_f64(src)}"]),
+      lambda ctx, x, src: [f"movsd {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
   (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
@@ -942,15 +942,15 @@ arm_rewrite = PatternMatcher([
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_f64(src)}, [{ctx.r.assign_i64(addr)}]"]),
 
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.bool, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=True)}, {ctx.r.assign_i32(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=True)}, {ctx.r.assign_i64(src)}"]),
+      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=False)}, {ctx.r.assign_i64(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"fmov {ctx.r.assign_f32(x, reserve=True)}, {ctx.r.assign_f32(src)}"]),
+      lambda ctx, x, src: [f"fmov {ctx.r.assign_f32(x, reserve=False)}, {ctx.r.assign_f32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"fmov {ctx.r.assign_f64(x, reserve=True)}, {ctx.r.assign_f64(src)}"]),
+      lambda ctx, x, src: [f"fmov {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
   (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldrb {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
