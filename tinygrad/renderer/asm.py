@@ -141,7 +141,11 @@ class Variable:
     note = f""
     if Arch.arm:
       sp = "x29"
-      if self.stack > 512:
+      if self.stack > 768:
+        sub = [f"sub x29, x29, #768"]
+        add = [f"add x29, x29, #768"]
+        stack = self.stack - 768
+      elif self.stack > 512:
         sub = [f"sub x29, x29, #512"]
         add = [f"add x29, x29, #512"]
         stack = self.stack - 512
@@ -170,7 +174,11 @@ class Variable:
     assert self.stack is not None
     if Arch.arm:
       sp = "x29"
-      if self.stack > 512:
+      if self.stack > 768:
+        sub = [f"sub x29, x29, #768"]
+        add = [f"add x29, x29, #768"]
+        stack = self.stack - 768
+      elif self.stack > 512:
         sub = [f"sub x29, x29, #512"]
         add = [f"add x29, x29, #512"]
         stack = self.stack - 512
@@ -476,11 +484,7 @@ def alu(ctx, x):
   _dst = dst.render(dtype.itemsize)
   src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
   if Arch.arm:
-    if dtype.itemsize < 4:
-      clear_op = "mov" if reg_type is IReg else "fmov"
-      clear = [f"mov {_dst}, xzr"]
-    else: clear = []
-    return [*clear, f"{operator} {_dst}, {', '.join(src_regs_str)}"]
+    return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
   else:
     _mov = "mov" if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else "movss" 
     if dst == src_regs[0] and len(src_regs_str) == 2:
