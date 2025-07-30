@@ -82,7 +82,7 @@ def prepare_test_op(low, high, shps, vals, forward_only=False):
     if os.environ.get("INPUT_BYTES"):
       print(f"{np_data=}")
       b = np_data[0].tobytes()
-      for _b in b: print(f"{_b:#x}", end=" ")
+      for _b in b: print(f"{_b:#x}", end=", ")
       print()
     ts = [torch.tensor(data, requires_grad=(not forward_only)) for data in np_data]
   for i in range(len(ts)):
@@ -440,16 +440,7 @@ class TestOps(unittest.TestCase):
       lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)),
       lambda x: Tensor.avg_pool2d(x, kernel_size=(1,2), padding=(0,1), stride=(5,1)), rtol=1e-5)
 
-  @skipU("POOL_CEIL")
   def test_avg_pool2d_ceil_mode(self):
-    shape = (1,1,6,6)
-    ksz = 4
-    with self.subTest(kernel_size=ksz):
-      helper_test_op([shape],
-        lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True),
-        lambda x: Tensor.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True), rtol=1e-5)
-
-  def test_avg_pool2d_ceil_mode_2(self):
     shape = (1,1,6,6)
     for ksz in [(3,3), 3, (3,2), 4]:
       with self.subTest(kernel_size=ksz):
@@ -457,6 +448,16 @@ class TestOps(unittest.TestCase):
           lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True),
           lambda x: Tensor.avg_pool2d(x, kernel_size=ksz, padding=1, stride=3, ceil_mode=True), rtol=1e-5)
 
+  def test_avg_pool2d_padding(self):
+    shape = (32,2,111,28)
+    for ksz in [(2,2), (3,3), 2, 3, (3,2)]:
+      for p in [1, (1,0), (0,1)]:
+        with self.subTest(kernel_size=ksz, padding=p):
+          helper_test_op([shape],
+            lambda x: torch.nn.functional.avg_pool2d(x, kernel_size=ksz, padding=p),
+            lambda x: Tensor.avg_pool2d(x, kernel_size=ksz, padding=p), rtol=1e-5)
+    with self.assertRaises(ValueError):
+      Tensor.avg_pool2d(Tensor.randn((32,2,111,28)), kernel_size=(2,2), padding=(1,1,1))
 
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:

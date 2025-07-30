@@ -482,7 +482,10 @@ def alu(ctx, x):
     if dst == src_regs[0] and len(src_regs_str) == 2:
       return [f"{operator} {_dst}, {src_regs_str[1]}"]
     elif len(src_regs_str) == 2:
-      return [f"{_mov} {_dst}, {src_regs_str[0]}",
+      clear_op = "xor" if reg_type is IReg else "xorps" if dtype.itemsize == 4 else "xorpd"
+      return [
+        f"{clear_op} {dst}, {dst}",
+        f"{_mov} {_dst}, {src_regs_str[0]}",
         f"{operator} {_dst}, {src_regs_str[1]}",]
     elif _dst == src_regs_str[0] and len(src_regs_str) == 1:
       return [f"{operator} {_dst}, {src_regs_str[0]}"]
@@ -490,7 +493,6 @@ def alu(ctx, x):
       return [f"{operator} {_dst}, {src_regs_str[0]}"]
     else:
       raise Exception("ALU error handling srcs")
-
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
@@ -833,7 +835,9 @@ def gated_load(ctx, x, bidx, alt, gate):
 
 
 complex_rewrites = PatternMatcher([
-  (UPat(Ops.LOAD, name="x", src=(UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"), UPat.var("alt")), allow_any_len=True),
+  (UPat(Ops.LOAD, name="x", src=(
+    UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"),
+    UPat.var("alt")), allow_any_len=True),
    gated_load),
   (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
   (UPat(Ops.RECIP, name="x"), recip), 
@@ -1056,7 +1060,7 @@ class AsmRenderer(Renderer):
         l = cast(list[str], l)
         l = [*r.flush_kernel(), *l, ""]
         if DEBUG.value >= 6:
-          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:20]
+          uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:30]
           l = [*uop_str, *l]
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
@@ -1102,8 +1106,8 @@ class AsmRenderer(Renderer):
 {name}:
 {_kernel}
     """
-    if os.environ.get("MANUAL_ASM"):
-      with open("../tg-dev/max/kernel.s", "wt") as f: f.write(ret)
+    if folder:=os.environ.get("SAVE_ASM"):
+      with open(f"../tg-dev/{folder}/kernel.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS
