@@ -141,22 +141,14 @@ class Variable:
     note = f""
     if Arch.arm:
       sp = "x29"
-      if self.stack > 768:
-        sub = [f"sub x29, x29, #768"]
-        add = [f"add x29, x29, #768"]
-        stack = self.stack - 768
-      elif self.stack > 512:
-        sub = [f"sub x29, x29, #512"]
-        add = [f"add x29, x29, #512"]
-        stack = self.stack - 512
-      elif self.stack > 256:
-        sub = [f"sub x29, x29, #256"]
-        add = [f"add x29, x29, #256"]
-        stack = self.stack - 256
-      else:
-        stack = self.stack
-        sub, add = [], []
-
+      stack = self.stack
+      sub = []
+      add = []
+      while stack > 255:
+        sub.append(f"sub x29, x29, #255")
+        add.insert(0, f"add x29, x29, #255")
+        stack -= 255
+      assert stack <=255
       return [
         *sub,
         f"str {self.reg.render64()}, [{sp}, #-{stack}]",
@@ -174,22 +166,14 @@ class Variable:
     assert self.stack is not None
     if Arch.arm:
       sp = "x29"
-      if self.stack > 768:
-        sub = [f"sub x29, x29, #768"]
-        add = [f"add x29, x29, #768"]
-        stack = self.stack - 768
-      elif self.stack > 512:
-        sub = [f"sub x29, x29, #512"]
-        add = [f"add x29, x29, #512"]
-        stack = self.stack - 512
-      elif self.stack > 256:
-        sub = [f"sub x29, x29, #256"]
-        add = [f"add x29, x29, #256"]
-        stack = self.stack - 256
-      else:
-        stack = self.stack
-        sub, add = [], []
-
+      stack = self.stack
+      sub = []
+      add = []
+      while stack > 255:
+        sub.append(f"sub x29, x29, #255")
+        add.insert(0, f"add x29, x29, #255")
+        stack -= 255
+      assert stack <=255
       return [
         *sub,
         f"ldr {reg.render64()}, [{sp}, #-{stack}]",
@@ -1073,16 +1057,26 @@ class AsmRenderer(Renderer):
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
         kernel.extend(l)
+    if Arch.x86:
+      stack_alloc = [f"sub rsp, {r.stack_size}"]
+    else:
+      stack_alloc = []
+      stack = r.stack_size
+      while stack > 4096:
+        stack_alloc.append(f"sub sp, sp, #4096")
+        stack -= 4096
+      stack_alloc.append(f"sub sp, sp, #{stack}")
+
     prologue = [
       "stp x29, x30, [sp, #-16]!",
       "mov x29, sp",
       "mov x30, sp",
       "sub x30, x30, #255",
-      f"sub sp, sp, #{r.stack_size}",
+      *stack_alloc
     ] if self.arm else [
       "push rbp",
       "mov rbp, rsp",
-      f"sub rsp, {r.stack_size}",
+      *stack_alloc,
     ]
     epilogue = [
       f"mov sp, x29;",
