@@ -515,8 +515,7 @@ class TestOps(unittest.TestCase):
     helper_test_op([(45,65)], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6, low=-400, high=-300)
     helper_test_op([()], torch.nn.functional.softplus, Tensor.softplus, grad_atol=1e-6)
 
-  @skipU("MANUAL")
-  def test_manual(self):
+  def test_cross_entropy_1(self):
     r = "none"
     #shape = [(32, 10), (32, 10)]
     shape = [(5,4), (5,4)]
@@ -524,7 +523,48 @@ class TestOps(unittest.TestCase):
     x, y = x2
     with Context(NOOPT=0):
       x.sigmoid().binary_crossentropy(y.clip(0,1), reduction=r).realize()
-    return
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy(x.sigmoid(),y.clip(0,1)),
+                                       lambda x,y: x.sigmoid().binary_crossentropy(y.clip(0,1)))
+
+  def test_binary_crossentropy(self):
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy(x.sigmoid(),y.clip(0,1)),
+                                       lambda x,y: x.sigmoid().binary_crossentropy(y.clip(0,1)))
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x,y.clip(0,1)),
+                                       lambda x,y: x.binary_crossentropy_logits(y.clip(0,1)))
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x,y.clip(0,1)),
+                                       lambda x,y: x.sigmoid().binary_crossentropy(y.clip(0,1)))
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy(x.sigmoid(),y.clip(0,1)),
+                                       lambda x,y: x.binary_crossentropy_logits(y.clip(0,1)))
+  def test_binary_crossentropy_reductions(self):
+    for r in ("mean", "sum", "none"):
+      helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy(x.sigmoid(), y.clip(0,1), reduction=r),
+                                         lambda x,y: x.sigmoid().binary_crossentropy(y.clip(0,1), reduction=r))
+      helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x, y.clip(0,1), reduction=r),
+                                         lambda x,y: x.binary_crossentropy_logits(y.clip(0,1), reduction=r))
+  def test_binary_crossentropy_logits_pos_weights(self):
+    pos_weight = [0.25, 0.5, 0.75, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x,y.clip(0,1),
+                                                                                                        pos_weight=torch.tensor(pos_weight)),
+                                       lambda x,y: x.binary_crossentropy_logits(y.clip(0,1),pos_weight=Tensor(pos_weight)))
+  def test_cross_entropy_class_probabilities(self):
+    helper_test_op([(32,), (32,)], lambda x,y: torch.nn.functional.cross_entropy(x, y), lambda x,y: x.cross_entropy(y))
+    helper_test_op([(32,10), (32,10)], lambda x,y: torch.nn.functional.cross_entropy(x, y), lambda x,y: x.cross_entropy(y))
+    helper_test_op([(32,4,4,4), (32,4,4,4)], lambda x,y: torch.nn.functional.cross_entropy(x, y), lambda x,y: x.cross_entropy(y))
+
+  def test_cross_entropy_2(self):
+    r = "none"
+    shape = [(32, 10), (32, 10)]
+    shape = [(5, 4), (5, 4)]
+    x1, x2 = prepare_test_op(-2, 2, shape, True)
+    x, y = x2
+    with Context(NOOPT=0):
+      x.sigmoid().binary_crossentropy(y.clip(0,1)).realize()
+
+  @skipU("MANUAL")
+  def test_manual(self):
+    shape = (5, 4)
+    helper_test_op([shape, shape], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x,y.clip(0,1)),
+                                       lambda x,y: x.binary_crossentropy_logits(y.clip(0,1)))
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()

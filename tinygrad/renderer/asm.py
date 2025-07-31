@@ -740,13 +740,18 @@ def idiv(ctx, x):
     if len(vars_holding_eax) >= 1:
       var = vars_holding_eax[0]
       ctx.r._spill(IReg(0))
-      mov2.extend(var.load(IReg(0)))
     if len(vars_holding_edx) >= 1:
       var = vars_holding_edx[0]
       ctx.r._spill(IReg(2))
+    _dividend, _divisor, _dst = ctx.r.assign_multiple(
+      [dividend, divisor, x],
+      reg_type=IReg, excludes=[IReg(0), IReg(2)])
+    if len(vars_holding_eax) >= 1:
+      var = vars_holding_eax[0]
+      mov2.extend(var.load(IReg(0)))
+    if len(vars_holding_edx) >= 1:
+      var = vars_holding_edx[0]
       mov2.extend(var.load(IReg(2)))
-    _dividend, _divisor, _dst = ctx.r.assign_multiple([dividend, divisor, x],
-                                                reg_type=IReg, excludes=[IReg(0), IReg(2)])
     ret = [
       f"mov rax, {_dividend.render64()}",
       "cdq",
