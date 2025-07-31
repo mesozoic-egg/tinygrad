@@ -560,11 +560,53 @@ class TestOps(unittest.TestCase):
     with Context(NOOPT=0):
       x.sigmoid().binary_crossentropy(y.clip(0,1)).realize()
 
+  def test_pad_reflect_mode(self):
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (0,2,3,2), mode="reflect"), lambda x: x.pad((0,2,3,2), mode="reflect"))
+    helper_test_op([(5,5,5)], lambda x: torch.nn.functional.pad(x, (0,2), mode="reflect"), lambda x: x.pad((0,2), mode="reflect"))
+    helper_test_op([(3,3,3,3)], lambda x: torch.nn.functional.pad(x, (-1,2,2,-1), mode="reflect"), lambda x: x.pad((-1,2,2,-1), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (3,-3,0,-3), mode="reflect"), lambda x: x.pad((3,-3,0,-3), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (3,-5,1,-5), mode="reflect"), lambda x: x.pad((3,-5,1,-5), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (0,0,0,-5), mode="reflect"), lambda x: x.pad((0,0,0,-5), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (4,4,0,4), mode="reflect"), lambda x:x.pad((4,4,0,4),mode="reflect"))
+    self.helper_test_exception([(1,1,5,5)],
+                                lambda x: torch.nn.functional.pad(x, (3,5,0,0),mode="reflect"), lambda x: x.pad((3,5,0,0),mode="reflect"),
+                                expected=(RuntimeError, ValueError))
+
+  def helper_test_exception(self, shps, torch_fxn, tinygrad_fxn, expected, forward_only=False, exact=False, vals=None, low=-1.5, high=1.5):
+    if getenv("MOCKGPU") and Device.DEFAULT == "NV": self.skipTest('helper_test_exception fails in CI CUDA')
+    ts, tst = prepare_test_op(low, high, shps, vals, forward_only)
+    with self.assertRaises(expected) as torch_cm:
+      torch_fxn(*ts)
+    with self.assertRaises(expected) as tinygrad_cm:
+      tinygrad_fxn(*tst)
+    if exact: self.assertEqual(str(torch_cm.exception), str(tinygrad_cm.exception))
+    if not CI: print("\ntesting %40r   torch/tinygrad exception: %s / %s" % (shps, torch_cm.exception, tinygrad_cm.exception), end="")
+
+  def test_pad_reflect_mode(self):
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (0,2,3,2), mode="reflect"), lambda x: x.pad((0,2,3,2), mode="reflect"))
+    helper_test_op([(5,5,5)], lambda x: torch.nn.functional.pad(x, (0,2), mode="reflect"), lambda x: x.pad((0,2), mode="reflect"))
+    helper_test_op([(1,1,5,5,5)], lambda x: torch.nn.functional.pad(x, (1,2,3,4,1,2), mode="reflect"),
+                                  lambda x: x.pad((1,2,3,4,1,2), mode="reflect"))
+    helper_test_op([(3,3,3,3)], lambda x: torch.nn.functional.pad(x, (-1,2,2,-1), mode="reflect"), lambda x: x.pad((-1,2,2,-1), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (3,-3,0,-3), mode="reflect"), lambda x: x.pad((3,-3,0,-3), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (3,-5,1,-5), mode="reflect"), lambda x: x.pad((3,-5,1,-5), mode="reflect"))
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (0,0,0,-5), mode="reflect"), lambda x: x.pad((0,0,0,-5), mode="reflect"))
+
+    # max pad size for reflect is exactly once: pad < input size
+    helper_test_op([(1,1,5,5)], lambda x: torch.nn.functional.pad(x, (4,4,0,4), mode="reflect"), lambda x:x.pad((4,4,0,4),mode="reflect"))
+    # raise error for relfection padding when: pad >= input size
+    self.helper_test_exception([(1,1,5,5)],
+                                lambda x: torch.nn.functional.pad(x, (3,5,0,0),mode="reflect"), lambda x: x.pad((3,5,0,0),mode="reflect"),
+                                expected=(RuntimeError, ValueError))
   @skipU("MANUAL")
   def test_manual(self):
-    shape = (5, 4)
-    helper_test_op([shape, shape], lambda x,y: torch.nn.functional.binary_cross_entropy_with_logits(x,y.clip(0,1)),
-                                       lambda x,y: x.binary_crossentropy_logits(y.clip(0,1)))
+    #shape = (1,1,5,5,5)
+    #np_data = np.random.uniform(low=-2, high=2, size=shape).astype(_to_np_dtype(dtypes.default_float))
+    #x = Tensor(np_data).reshape((1,1,5,5,5)).pad((1,2,3,4,1,2), mode="reflect")
+    #print(x.numpy())
+    #return
+    helper_test_op([(1,1,5,5,5)], lambda x: torch.nn.functional.pad(x, (1,2,3,4,1,2), mode="reflect"),
+                                  lambda x: x.pad((1,2,3,4,1,2), mode="reflect"))
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()

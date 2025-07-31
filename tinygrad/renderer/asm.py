@@ -326,7 +326,8 @@ class Allocator:
         need_alloc.append(i)
       else:
         regs[i] = _reg
-    alloc_regs = self.alloc_multiple(len(need_alloc), reg_type, excludes)
+    existing_regs = [reg for reg in regs if reg is not None]
+    alloc_regs = self.alloc_multiple(len(need_alloc), reg_type, existing_regs + excludes)
     for i, reg in zip(need_alloc, alloc_regs):
       uop = uops[i]
       var = self.uops[uop]
@@ -550,6 +551,7 @@ def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
   regs = ctx.r.assign_multiple([src0, src1, x], IReg)
   src0_reg, src1_reg, reg = regs
+  assert src0_reg != src1_reg and src0_reg != reg and src1_reg != reg
   src0_str = src0_reg.render64()
   src1_str = src1_reg.render64()
   multiplier = src0.dtype.itemsize
