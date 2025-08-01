@@ -794,73 +794,74 @@ def _where(ctx, x):
       f".end_{ctx.r.cur_step}:",
     ]
 
-def idiv(ctx, x):
+def x86_idiv(ctx, x):
   dividend, divisor = x.src
-  if Arch.x86:
-    vars_holding_eax = ctx.r.find_vars_holding_reg(IReg(0))
+  vars_holding_eax = ctx.r.find_vars_holding_reg(IReg(0))
+  for var in vars_holding_eax:
+    if var.stack is None:
+      ctx.r.stack_size += (var.reg.size // 8)
+      var.stack = ctx.r.stack_size
+    ctx.r.kernel.extend(var.store())
+    var.reg = None
+    ctx.r.pools[IReg].release_reg(IReg(0), var)
+  vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
+  for var in vars_holding_edx:
+    if var.stack is None:
+      ctx.r.stack_size += (var.reg.size // 8)
+      var.stack = ctx.r.stack_size
+    ctx.r.kernel.extend(var.store())
+    var.reg = None
+    ctx.r.pools[IReg].release_reg(IReg(2), var)
+  mov2 = []
+  _dividend, _divisor, _dst = ctx.r.assign_multiple(
+    [dividend, divisor, x],
+    reg_type=IReg, excludes=[IReg(0), IReg(2)])
+  if len(vars_holding_eax) >= 1:
+    var0 = vars_holding_eax[0]
+    mov2.extend([
+      *move_reg_mem("ldr", IReg(0), var0.stack, 8)
+    ])
     for var in vars_holding_eax:
-      if var.stack is None:
-        ctx.r.stack_size += (var.reg.size // 8)
-        var.stack = ctx.r.stack_size
-      ctx.r.kernel.extend(var.store())
-      var.reg = None
-      ctx.r.pools[IReg].release_reg(IReg(0), var)
-    vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
+      if var.reg is not None:
+        ctx.r.pools[IReg].release_reg(var.reg, var)
+        if var.reg not in ctx.r.pools[IReg]._acquired:
+          ctx.r.pools[IReg].insert(0, var.reg)
+      var.reg = IReg(0)
+      ctx.r.pools[IReg].acquire_reg(IReg(0), var)
+  if len(vars_holding_edx) >= 1:
+    var0 = vars_holding_edx[0]
+    mov2.extend([
+      *move_reg_mem("ldr", IReg(2), var0.stack, 8)
+    ])
     for var in vars_holding_edx:
-      if var.stack is None:
-        ctx.r.stack_size += (var.reg.size // 8)
-        var.stack = ctx.r.stack_size
-      ctx.r.kernel.extend(var.store())
-      var.reg = None
-      ctx.r.pools[IReg].release_reg(IReg(2), var)
-    mov2 = []
-    _dividend, _divisor, _dst = ctx.r.assign_multiple(
-      [dividend, divisor, x],
-      reg_type=IReg, excludes=[IReg(0), IReg(2)])
-    if len(vars_holding_eax) >= 1:
-      var0 = vars_holding_eax[0]
-      mov2.extend([
-        *move_reg_mem("ldr", IReg(0), var0.stack, 8)
-      ])
-      for var in vars_holding_eax:
-        if var.reg is not None:
-          ctx.r.pools[IReg].release_reg(var.reg, var)
-          if var.reg not in ctx.r.pools[IReg]._acquired:
-            ctx.r.pools[IReg].insert(0, var.reg)
-        var.reg = IReg(0)
-        ctx.r.pools[IReg].acquire_reg(IReg(0), var)
-    if len(vars_holding_edx) >= 1:
-      var0 = vars_holding_edx[0]
-      mov2.extend([
-        *move_reg_mem("ldr", IReg(2), var0.stack, 8)
-      ])
-      for var in vars_holding_edx:
-        if var.reg is not None:
-          ctx.r.pools[IReg].release_reg(var.reg, var)
-          if var.reg not in ctx.r.pools[IReg]._acquired:
-            ctx.r.pools[IReg].insert(0, var.reg)
-        var.reg = IReg(2)
-        ctx.r.pools[IReg].acquire_reg(IReg(2), var)
-    if x.op is Ops.IDIV:
-      result_reg = "rax"
-    elif x.op is Ops.MOD:
-      result_reg = "rdx"
-    else: raise Exception(f"Invalid op {x.op}")
-    ret = [
-      f"mov rax, {_dividend.render64()}",
-      "cdq",
-      f"idiv {_divisor.render32()}",
-      f"mov {_dst}, {result_reg}",
-      *mov2,
-    ]
-    return ret
-  else:
-    _dividend, _divisor, _quotient = ctx.r.assign_multiple(
-      [dividend, divisor, x], IReg)
-    ret = [
-      f"sdiv {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
-    ]
-    return ret
+      if var.reg is not None:
+        ctx.r.pools[IReg].release_reg(var.reg, var)
+        if var.reg not in ctx.r.pools[IReg]._acquired:
+          ctx.r.pools[IReg].insert(0, var.reg)
+      var.reg = IReg(2)
+      ctx.r.pools[IReg].acquire_reg(IReg(2), var)
+  if x.op is Ops.IDIV:
+    result_reg = "rax"
+  elif x.op is Ops.MOD:
+    result_reg = "rdx"
+  else: raise Exception(f"Invalid op {x.op}")
+  ret = [
+    f"mov rax, {_dividend.render64()}",
+    "cdq",
+    f"idiv {_divisor.render32()}",
+    f"mov {_dst}, {result_reg}",
+    *mov2,
+  ]
+  return ret
+
+def arm_idiv(ctx, x):
+  dividend, divisor = x.src
+  _dividend, _divisor, _quotient = ctx.r.assign_multiple(
+    [dividend, divisor, x], IReg)
+  ret = [
+    f"sdiv {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
+  ]
+  return ret
 
 def max_int(ctx, x):
   src1, src2 = x.src
@@ -932,7 +933,6 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
-  (UPat((Ops.IDIV, Ops.MOD), name="x"), idiv),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
@@ -944,6 +944,7 @@ complex_rewrites = PatternMatcher([
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
 ])
 x86_rewrite = PatternMatcher([
+  (UPat((Ops.IDIV, Ops.MOD), name="x"), x86_idiv),
   (UPat((Ops.CMPNE, Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
                                   UPat(name="b"))),
    cmp_int_x86),
@@ -1004,6 +1005,7 @@ x86_rewrite = PatternMatcher([
 ]) + complex_rewrites
 
 arm_rewrite = PatternMatcher([
+  (UPat(Ops.IDIV, name="x"), arm_idiv),
   (UPat((Ops.CMPLT, Ops.CMPNE), name="x", src=(UPat(name="a"),
                                   UPat(name="b"))),
    cmp_arm),
@@ -1060,6 +1062,23 @@ arm_rewrite = PatternMatcher([
 extra_matcher = PatternMatcher([
   #(UPat(Ops.ASSIGN, name="assign", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat((Ops.ADD,), name="add"))), lambda ctx, assign, acc, add: add),
 ])
+
+if Arch.arm:
+  extra_matcher += PatternMatcher([
+    (UPat(Ops.MOD, name="x", src=(UPat(name="src1"), UPat(name="src2"))),
+      lambda ctx, x, src1, src2:
+      UOp(Ops.SUB, dtype=x.dtype, src=(
+        src1,
+        UOp(Ops.MUL, dtype=x.dtype, src=(
+          UOp(Ops.IDIV, dtype=x.dtype, src=(
+            src1,
+            src2,
+          )),
+          src2,
+       ),
+     ))),
+     )
+  ])
 
 class AsmRenderer(Renderer):
   supports_float4 = False
