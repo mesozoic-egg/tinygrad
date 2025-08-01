@@ -489,6 +489,8 @@ AluOps = _AluOps({
   (Ops.ADD, ArchType.X86, FReg, 64): "addsd",
   (Ops.ADD, ArchType.ARM, IReg): "add",
   (Ops.ADD, ArchType.ARM, FReg): "fadd",
+  (Ops.SUB, ArchType.ARM, IReg): "sub",
+  (Ops.SUB, ArchType.ARM, FReg): "fsub",
   (Ops.MUL, ArchType.X86, IReg): "imul",
   (Ops.MUL, ArchType.X86, FReg, 32): "mulss",
   (Ops.MUL, ArchType.X86, FReg, 64): "mulsd",
