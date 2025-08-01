@@ -612,7 +612,6 @@ class TestOps(unittest.TestCase):
     helper_test_op([(3,4,5,6)], lambda x: x.all(axis=(1,2)), forward_only=True)
 
 
-  @skipU("MANUAL")
   def test_broadcast_full(self):
     for torch_op, tinygrad_op in [(torch.add, Tensor.add), (torch.sub, Tensor.sub), (torch.mul, Tensor.mul),
                                   (torch.div, Tensor.div), (torch.pow, Tensor.pow)]:
@@ -623,7 +622,7 @@ class TestOps(unittest.TestCase):
             helper_test_op(shapes, torch_op, tinygrad_op)
           else:
             helper_test_op(shapes, torch_op, tinygrad_op, low=0, high=3)
-  @skipU("MANUAL")
+
   def test_broadcast_pow(self):
     tinygrad_op = Tensor.pow
     torch_op = torch.pow

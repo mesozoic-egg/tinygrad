@@ -841,11 +841,16 @@ def idiv(ctx, x):
             ctx.r.pools[IReg].insert(0, var.reg)
         var.reg = IReg(2)
         ctx.r.pools[IReg].acquire_reg(IReg(2), var)
+    if x.op is Ops.IDIV:
+      result_reg = "rax"
+    elif x.op is Ops.MOD:
+      result_reg = "rdx"
+    else: raise Exception(f"Invalid op {x.op}")
     ret = [
       f"mov rax, {_dividend.render64()}",
       "cdq",
       f"idiv {_divisor.render32()}",
-      f"mov {_dst}, rax",
+      f"mov {_dst}, {result_reg}",
       *mov2,
     ]
     return ret
@@ -927,7 +932,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
-  (UPat(Ops.IDIV, name="x"), idiv),
+  (UPat((Ops.IDIV, Ops.MOD), name="x"), idiv),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
