@@ -237,6 +237,11 @@ class AllocatorPool:
       del self._acquired[reg]
 
   def bookkeeping(self):
+    if len(self._pool) + len(self._acquired) != self.num:
+      print(f"{self._pool=}")
+      for reg, vars in self._acquired.items():
+        print(f"\t{reg}: {vars}")
+      raise Exception(f"Inconsistent pool + acquired and total reg number")
     for reg, vars in self._acquired.items():
       for var in vars:
         if var.reg != reg:
@@ -820,6 +825,8 @@ def idiv(ctx, x):
       for var in vars_holding_eax:
         if var.reg is not None:
           ctx.r.pools[IReg].release_reg(var.reg, var)
+          if var.reg not in ctx.r.pools[IReg]._acquired:
+            ctx.r.pools[IReg].insert(0, var.reg)
         var.reg = IReg(0)
         ctx.r.pools[IReg].acquire_reg(IReg(0), var)
     if len(vars_holding_edx) >= 1:
@@ -830,6 +837,8 @@ def idiv(ctx, x):
       for var in vars_holding_edx:
         if var.reg is not None:
           ctx.r.pools[IReg].release_reg(var.reg, var)
+          if var.reg not in ctx.r.pools[IReg]._acquired:
+            ctx.r.pools[IReg].insert(0, var.reg)
         var.reg = IReg(2)
         ctx.r.pools[IReg].acquire_reg(IReg(2), var)
     ret = [
