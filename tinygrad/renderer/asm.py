@@ -1073,8 +1073,12 @@ class AsmRenderer(Renderer):
         v = r.uops[u]
         print(i, v, oneline_uop(u))
     if Arch.x86:
-      r.pools[IReg].pop(r.pools[IReg].index(IReg(5)))
+      r.blocked.append(IReg(5))
 
+    for i,u in enumerate(uops):
+      if u.op is Ops.DEFINE_GLOBAL:
+        self.r.move_var_to_stack(r.uops[u])
+        kernel.extend(self.r.flush_kernel())
     for i,u in enumerate(uops):
       self.r.cur_step = i
       if DEBUG.value >= 6:
@@ -1085,8 +1089,7 @@ class AsmRenderer(Renderer):
           print(self.r.uops[src])
       r.free_expired(i)
       if u.op is Ops.DEFINE_GLOBAL:
-        self.r.move_var_to_stack(r.uops[u])
-        kernel.extend(self.r.flush_kernel())
+        pass
       elif u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
       else:
