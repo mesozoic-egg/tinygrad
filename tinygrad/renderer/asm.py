@@ -88,6 +88,36 @@ class FReg(RegBase):
     raise Exception(f"Either 4 or 8 bytes for register, received {itemsize}")
 
 def oneline_uop(u: UOp): return repr(u).split('\n')[0]
+
+def move_reg_mem(op: Union[Literal["str"], Literal["ldr"]],
+                 reg: RegBase, stack: int, size: int):
+  if Arch.arm:
+    sp = "x29"
+    sub = []
+    add = []
+    while stack > 255:
+      sub.append(f"sub x29, x29, #255")
+      add.insert(0, f"add x29, x29, #255")
+      stack -= 255
+    assert stack <=255
+    op = "str" if op == "str" else "ldr"
+    return [
+      *sub,
+      f"{op} {reg.render64()}, [{sp}, #-{stack}]",
+      *add,
+    ]
+  else:
+    if type(reg) is IReg:
+      _op = "mov"
+    else:
+      _op = "movss" if size == 4 else "movsd"
+
+    if op == "str":
+      return [f"{_op} [rbp - {stack}], {reg.render64()}"]
+    else:
+      return [f"{_op} {reg.render64()}, [rbp - {stack}]"]
+
+
 class Variable:
   def __init__(self, uop: UOp, start: int, end: int):
     """
@@ -138,53 +168,11 @@ class Variable:
   def store(self, dst: str="") -> list[str]:
     assert self.reg is not None
     assert self.stack is not None
-    note = f""
-    if Arch.arm:
-      sp = "x29"
-      stack = self.stack
-      sub = []
-      add = []
-      while stack > 255:
-        sub.append(f"sub x29, x29, #255")
-        add.insert(0, f"add x29, x29, #255")
-        stack -= 255
-      assert stack <=255
-      return [
-        *sub,
-        f"str {self.reg.render64()}, [{sp}, #-{stack}]",
-        *add,
-      ]
-    else:
-      if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
-        op = "mov"
-      else:
-        op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
-      return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
+    return move_reg_mem("str", self.reg, self.stack, self.uop.dtype.itemsize)
 
   def load(self, reg: RegBase, src: str="") -> list[str]:
-    #self.reg = reg
     assert self.stack is not None
-    if Arch.arm:
-      sp = "x29"
-      stack = self.stack
-      sub = []
-      add = []
-      while stack > 255:
-        sub.append(f"sub x29, x29, #255")
-        add.insert(0, f"add x29, x29, #255")
-        stack -= 255
-      assert stack <=255
-      return [
-        *sub,
-        f"ldr {reg.render64()}, [{sp}, #-{stack}]",
-        *add,
-      ]
-    else:
-      if dtypes.is_int(self.uop.dtype) or dtypes.is_bool(self.uop.dtype) or hasattr(self.uop.dtype, "_base"):
-        op = "mov"
-      else:
-        op = "movss" if self.uop.dtype.itemsize == 4 else "movsd"
-      return [f"{op} {reg.render64()}, [rbp - {self.stack}]"]
+    return move_reg_mem("ldr", reg, self.stack, self.uop.dtype.itemsize)
 
   def copy(self, dst: RegBase) -> list[str]:
     assert self.reg is not None
