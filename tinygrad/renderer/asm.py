@@ -228,15 +228,15 @@ class AllocatorPool:
     print(f"\033[33m{reg} acquired by {var} {oneline_uop(var.uop)}\033[0m")
     self._acquired[reg].add(var)
   def release_reg(self, reg: RegBase, var: Variable):
+    assert reg is not None
     print(f"\033[34m{reg} released from {var} {oneline_uop(var.uop)}\033[0m")
     acquired = self._acquired[reg]
-    #if var not in acquired: raise Exception(f"Not yet acquired: {var=} {reg=} {acquired=}")
+    if var not in acquired: raise Exception(f"Not yet acquired: {var=} {reg=} {acquired=}")
     self._acquired[reg].discard(var)
     if len(self._acquired[reg]) == 0:
       del self._acquired[reg]
 
   def bookkeeping(self):
-    return
     for reg, vars in self._acquired.items():
       for var in vars:
         if var.reg != reg:
@@ -793,23 +793,45 @@ def idiv(ctx, x):
   dividend, divisor = x.src
   if Arch.x86:
     vars_holding_eax = ctx.r.find_vars_holding_reg(IReg(0))
+    for var in vars_holding_eax:
+      if var.stack is None:
+        ctx.r.stack_size += (var.reg.size // 8)
+        var.stack = ctx.r.stack_size
+      ctx.r.kernel.extend(var.store())
+      var.reg = None
+      ctx.r.pools[IReg].release_reg(IReg(0), var)
     vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
+    for var in vars_holding_edx:
+      if var.stack is None:
+        ctx.r.stack_size += (var.reg.size // 8)
+        var.stack = ctx.r.stack_size
+      ctx.r.kernel.extend(var.store())
+      var.reg = None
+      ctx.r.pools[IReg].release_reg(IReg(2), var)
     mov2 = []
-    if len(vars_holding_eax) >= 1:
-      ctx.r._spill(IReg(0))
-    if len(vars_holding_edx) >= 1:
-      ctx.r._spill(IReg(2))
     _dividend, _divisor, _dst = ctx.r.assign_multiple(
       [dividend, divisor, x],
       reg_type=IReg, excludes=[IReg(0), IReg(2)])
     if len(vars_holding_eax) >= 1:
-      var = vars_holding_eax[0]
-      mov2.extend(var.load(IReg(0)))
-      var.reg = IReg(0)
+      var0 = vars_holding_eax[0]
+      mov2.extend([
+        *move_reg_mem("ldr", IReg(0), var0.stack, 8)
+      ])
+      for var in vars_holding_eax:
+        if var.reg is not None:
+          ctx.r.pools[IReg].release_reg(var.reg, var)
+        var.reg = IReg(0)
+        ctx.r.pools[IReg].acquire_reg(IReg(0), var)
     if len(vars_holding_edx) >= 1:
-      var = vars_holding_edx[0]
-      mov2.extend(var.load(IReg(2)))
-      var.reg = IReg(2)
+      var0 = vars_holding_edx[0]
+      mov2.extend([
+        *move_reg_mem("ldr", IReg(2), var0.stack, 8)
+      ])
+      for var in vars_holding_edx:
+        if var.reg is not None:
+          ctx.r.pools[IReg].release_reg(var.reg, var)
+        var.reg = IReg(2)
+        ctx.r.pools[IReg].acquire_reg(IReg(2), var)
     ret = [
       f"mov rax, {_dividend.render64()}",
       "cdq",
