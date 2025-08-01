@@ -213,6 +213,7 @@ class AllocatorPool:
   def __init__(self, reg_type: type[RegBase], num: int):
     self.reg_type, self.num = reg_type, num
     self._pool: list[RegBase] = [reg_type(i) for i in range(num)]
+    self._acquired: dict[RegBase, set[Variable]] = defaultdict(set)
 
   @property
   def pool(self):
@@ -221,7 +222,8 @@ class AllocatorPool:
   def __len__(self): return len(self._pool)
 
   def pop(self, i):
-    return self._pool.pop(i)
+    reg = self._pool.pop(i)
+    return reg
   
   def insert(self, i, v):
     self._pool.insert(i, v)
@@ -231,6 +233,13 @@ class AllocatorPool:
 
   def __getitem__(self, i):
     return self._pool[i]
+
+  def acquired_by(self, reg: RegBase, var: Variable):
+    self._acquired[reg].add(var)
+  def release(self, reg: RegBase, var: Variable):
+    self._acquired[reg].discard(var)
+    if len(self._acquired[reg]) == 0:
+      del self._acquired[reg]
 
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int):
@@ -296,6 +305,7 @@ class Allocator:
     reg = v.reg
     assert reg
     self.return_reg([reg])
+    self.pools[type(reg)].release(reg, v)
     assert reg is not None
     self._spill(reg)
     v.reg = None
@@ -311,6 +321,7 @@ class Allocator:
       return reg
     else:
       reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
+      self.pools[reg_type].acquired_by(reg, var)
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
@@ -330,6 +341,7 @@ class Allocator:
     uop = _key
     var = self.uops[uop]
     self.alloc_reg(reg)
+    self.pools[type(reg)].acquired_by(reg, var)
     if var.reg is not None:
       self.kernel.extend(var.copy(reg))
     var.reg = reg
@@ -359,6 +371,7 @@ class Allocator:
         self.kernel.extend(var.load(reg))
       var.reg = reg
       regs[i] = reg
+      self.pools[reg_type].acquired_by(reg, var)
     for reg in regs: assert reg is not None
     regs2 = cast(list[RegBase], regs)
     return regs2
