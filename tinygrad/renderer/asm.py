@@ -162,7 +162,7 @@ class Variable:
       return [f"{op} [rbp - {self.stack}], {self.reg.render64()}"]
 
   def load(self, reg: RegBase, src: str="") -> list[str]:
-    self.reg = reg
+    #self.reg = reg
     assert self.stack is not None
     if Arch.arm:
       sp = "x29"
@@ -345,6 +345,7 @@ class Allocator:
       reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
+      var.reg = reg
     if reserve: self.reserved[reg] = 1
     var.reg = reg
     self.pools[reg_type].acquire_reg(reg, var)
@@ -391,6 +392,7 @@ class Allocator:
       var = self.uops[uop]
       if var.stack is not None:
         self.kernel.extend(var.load(reg))
+        var.reg = reg
       regs[i] = reg
       var.reg = reg
       self.pools[reg_type].acquire_reg(reg, var)
@@ -815,9 +817,11 @@ def idiv(ctx, x):
     if len(vars_holding_eax) >= 1:
       var = vars_holding_eax[0]
       mov2.extend(var.load(IReg(0)))
+      var.reg = IReg(0)
     if len(vars_holding_edx) >= 1:
       var = vars_holding_edx[0]
       mov2.extend(var.load(IReg(2)))
+      var.reg = IReg(2)
     ret = [
       f"mov rax, {_dividend.render64()}",
       "cdq",
