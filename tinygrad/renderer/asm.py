@@ -312,7 +312,6 @@ class Allocator:
     assert reg is not None
     self._spill(reg)
     v.reg = None
-    self.pools[type(reg)].release_reg(reg, v)
 
   def assign(self, _key: UOp,
              reg_type: type[RegBase],
