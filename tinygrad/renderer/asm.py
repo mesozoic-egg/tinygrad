@@ -111,7 +111,7 @@ class Variable:
   @property
   def reg(self): return self._reg
   @reg.setter
-  def reg(self, v: RegBase):
+  def reg(self, v: Union[RegBase, None]):
     if self.track_reg:
       print(f"\033[31m{v} -> {self=}\033[0m")
       print(f"\t{oneline_uop(self.uop)}")
@@ -234,9 +234,13 @@ class AllocatorPool:
   def __getitem__(self, i):
     return self._pool[i]
 
-  def acquired_by(self, reg: RegBase, var: Variable):
+  def acquire_reg(self, reg: RegBase, var: Variable):
+    print(f"{var} acquired {reg}")
     self._acquired[reg].add(var)
-  def release(self, reg: RegBase, var: Variable):
+  def release_reg(self, reg: RegBase, var: Variable):
+    print(f"releasing {var} of {reg}")
+    acquired = self._acquired[reg]
+    #if var not in acquired: raise Exception(f"Not yet acquired: {var=} {reg=} {acquired=}")
     self._acquired[reg].discard(var)
     if len(self._acquired[reg]) == 0:
       del self._acquired[reg]
@@ -305,10 +309,10 @@ class Allocator:
     reg = v.reg
     assert reg
     self.return_reg([reg])
-    self.pools[type(reg)].release(reg, v)
     assert reg is not None
     self._spill(reg)
     v.reg = None
+    self.pools[type(reg)].release_reg(reg, v)
 
   def assign(self, _key: UOp,
              reg_type: type[RegBase],
@@ -321,7 +325,7 @@ class Allocator:
       return reg
     else:
       reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
-      self.pools[reg_type].acquired_by(reg, var)
+      self.pools[reg_type].acquire_reg(reg, var)
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
@@ -341,7 +345,7 @@ class Allocator:
     uop = _key
     var = self.uops[uop]
     self.alloc_reg(reg)
-    self.pools[type(reg)].acquired_by(reg, var)
+    self.pools[type(reg)].acquire_reg(reg, var)
     if var.reg is not None:
       self.kernel.extend(var.copy(reg))
     var.reg = reg
@@ -371,7 +375,7 @@ class Allocator:
         self.kernel.extend(var.load(reg))
       var.reg = reg
       regs[i] = reg
-      self.pools[reg_type].acquired_by(reg, var)
+      self.pools[reg_type].acquire_reg(reg, var)
     for reg in regs: assert reg is not None
     regs2 = cast(list[RegBase], regs)
     return regs2
@@ -380,15 +384,19 @@ class Allocator:
 
   def free_expired(self, i: int):
     expired: list[UOp] = []
-    assigned_regs: dict[RegBase, int] = defaultdict(int)
+    assigned_regs: dict[RegBase, set[Variable]] = defaultdict(set)
     for uop, var in self.uops.items():
       if var.end < i: expired.append(uop)
-      if var.reg: assigned_regs[var.reg] += 1
-      if var.reg and var.end < i: assigned_regs[var.reg] -= 1
+      if var.reg: assigned_regs[var.reg].add(var)
+      if var.reg and var.end < i:
+        reg = var.reg
+        pool = self.pools[type(reg)]
+        pool.release_reg(reg, var)
+        assigned_regs[var.reg].remove(var)
     for uop in expired:
       del self.uops[uop]
-    for reg, count in assigned_regs.items():
-      if count == 0:
+    for reg, vars in assigned_regs.items():
+      if len(vars) == 0:
         pool = self.pools[type(reg)]
         pool.insert(0, reg)
         if self.reserved.get(reg):
@@ -402,6 +410,9 @@ class Allocator:
         self.stack_size += (var.reg.size // 8)
         var.stack = self.stack_size
       self.kernel.extend(var.store())
+    for var in vars:
+      assert var.reg is not None
+      pool.release_reg(var.reg, var)
       var.reg = None
   def _find_spill_candidates(self, num: int, reg_type: type[RegBase], excludes: list[RegBase]=[]):
     candidates: list[tuple[UOp, Variable]] = []
@@ -869,7 +880,6 @@ def gated_load(ctx, x, bidx, alt, gate):
       f".END{step}:",
     ]
 
-
 complex_rewrites = PatternMatcher([
   (UPat(Ops.LOAD, name="x", src=(
     UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"),
@@ -1044,11 +1054,13 @@ class AsmRenderer(Renderer):
     var_intervals: dict[UOp, Variable] = OrderedDict()
     for i, u in enumerate(uops):
       var = Variable(u, i, -1)
-      if u.op is Ops.DEFINE_GLOBAL:
+      if False and u.op is Ops.DEFINE_GLOBAL:
         if Arch.arm:
           var.reg = r.pools[IReg].pop(0)
         else:
           reg_num = x86_params[u.arg]
+          reg = IReg(reg_num)
+          pool = r.pools[IReg]
           reg_idx = r.pools[IReg].index(IReg(reg_num))
           assert reg_idx > -1
           var.reg = r.pools[IReg].pop(reg_idx)
@@ -1076,10 +1088,6 @@ class AsmRenderer(Renderer):
       r.blocked.append(IReg(5))
 
     for i,u in enumerate(uops):
-      if u.op is Ops.DEFINE_GLOBAL:
-        self.r.move_var_to_stack(r.uops[u])
-        kernel.extend(self.r.flush_kernel())
-    for i,u in enumerate(uops):
       self.r.cur_step = i
       if DEBUG.value >= 6:
         print("=================================")
@@ -1089,7 +1097,18 @@ class AsmRenderer(Renderer):
           print(self.r.uops[src])
       r.free_expired(i)
       if u.op is Ops.DEFINE_GLOBAL:
-        pass
+        var = r.uops[u]
+        if Arch.arm:
+          reg = IReg(u.arg)
+        else:
+          reg = IReg(x86_params[u.arg])
+        pool = r.pools[IReg]
+        pool.pop(pool.index(reg))
+        pool.acquire_reg(reg, var)
+        var.reg = reg
+        r.move_var_to_stack(var)
+        kernel.extend(r.flush_kernel())
+          
       elif u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
       else:
