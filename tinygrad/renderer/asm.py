@@ -223,9 +223,11 @@ class AllocatorPool:
 
   def pop(self, i):
     reg = self._pool.pop(i)
+    print(f"\033[31m{reg} popped\033[0m")
     return reg
   
   def insert(self, i, v):
+    print(f"\033[32m{v} returned to pool\033[0m")
     self._pool.insert(i, v)
 
   def index(self, reg):
@@ -235,15 +237,25 @@ class AllocatorPool:
     return self._pool[i]
 
   def acquire_reg(self, reg: RegBase, var: Variable):
-    print(f"{var} acquired {reg}")
+    print(f"\033[33m{reg} acquired by {var} {oneline_uop(var.uop)}\033[0m")
     self._acquired[reg].add(var)
   def release_reg(self, reg: RegBase, var: Variable):
-    print(f"releasing {var} of {reg}")
+    print(f"\033[34m{reg} released from {var} {oneline_uop(var.uop)}\033[0m")
     acquired = self._acquired[reg]
     #if var not in acquired: raise Exception(f"Not yet acquired: {var=} {reg=} {acquired=}")
     self._acquired[reg].discard(var)
     if len(self._acquired[reg]) == 0:
       del self._acquired[reg]
+
+  def bookkeeping(self):
+    return
+    for reg, vars in self._acquired.items():
+      for var in vars:
+        if var.reg != reg:
+          print(f"{var=} {reg=}, {self._pool}")
+          for reg, vars in self._acquired.items():
+            print(f"\t{reg}: {vars}")
+          raise Exception("Inconsistent var.reg: {var.reg} and acquired record: {reg}")
 
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int):
@@ -258,6 +270,10 @@ class Allocator:
     self.cur_step = 0
     self.kernel: list[str] = []
     self.tracked_regs: list[RegBase] = []
+
+  def bookkeeping(self):
+    for pool in self.pools.values():
+      pool.bookkeeping()
 
   def flush_kernel(self) -> list[str]:
     ret = self.kernel
@@ -298,6 +314,9 @@ class Allocator:
     reg = src_var.reg
     assert reg, f"Source UOp must already been assigned to register {src} {reg=}"
     dst_var.reg = reg
+    pool = self.pools[type(reg)]
+    pool.acquire_reg(reg, dst_var)
+    
 
   def return_reg(self, regs: list[RegBase]):
     for reg in regs:
@@ -308,9 +327,9 @@ class Allocator:
   def move_var_to_stack(self, v: Variable):
     reg = v.reg
     assert reg
-    self.return_reg([reg])
     assert reg is not None
     self._spill(reg)
+    self.return_reg([reg])
     v.reg = None
 
   def assign(self, _key: UOp,
@@ -324,11 +343,11 @@ class Allocator:
       return reg
     else:
       reg = self.alloc_multiple(1, excludes=excludes, reg_type=reg_type)[0]
-      self.pools[reg_type].acquire_reg(reg, var)
     if var.stack is not None:
       self.kernel.extend(var.load(reg))
     if reserve: self.reserved[reg] = 1
     var.reg = reg
+    self.pools[reg_type].acquire_reg(reg, var)
     return reg
   def assign_i8(self, _key: UOp, excludes: list[RegBase]=[], reserve: bool = False):
     return self.assign(_key, IReg, excludes, reserve).render8()
@@ -344,10 +363,10 @@ class Allocator:
     uop = _key
     var = self.uops[uop]
     self.alloc_reg(reg)
-    self.pools[type(reg)].acquire_reg(reg, var)
     if var.reg is not None:
       self.kernel.extend(var.copy(reg))
     var.reg = reg
+    self.pools[type(reg)].acquire_reg(reg, var)
 
   def alloc_reg(self, reg: RegBase) -> None:
     pool = self.pools[type(reg)]
@@ -372,8 +391,8 @@ class Allocator:
       var = self.uops[uop]
       if var.stack is not None:
         self.kernel.extend(var.load(reg))
-      var.reg = reg
       regs[i] = reg
+      var.reg = reg
       self.pools[reg_type].acquire_reg(reg, var)
     for reg in regs: assert reg is not None
     regs2 = cast(list[RegBase], regs)
@@ -787,10 +806,8 @@ def idiv(ctx, x):
     vars_holding_edx = ctx.r.find_vars_holding_reg(IReg(2))
     mov2 = []
     if len(vars_holding_eax) >= 1:
-      var = vars_holding_eax[0]
       ctx.r._spill(IReg(0))
     if len(vars_holding_edx) >= 1:
-      var = vars_holding_edx[0]
       ctx.r._spill(IReg(2))
     _dividend, _divisor, _dst = ctx.r.assign_multiple(
       [dividend, divisor, x],
@@ -1053,16 +1070,6 @@ class AsmRenderer(Renderer):
     var_intervals: dict[UOp, Variable] = OrderedDict()
     for i, u in enumerate(uops):
       var = Variable(u, i, -1)
-      if False and u.op is Ops.DEFINE_GLOBAL:
-        if Arch.arm:
-          var.reg = r.pools[IReg].pop(0)
-        else:
-          reg_num = x86_params[u.arg]
-          reg = IReg(reg_num)
-          pool = r.pools[IReg]
-          reg_idx = r.pools[IReg].index(IReg(reg_num))
-          assert reg_idx > -1
-          var.reg = r.pools[IReg].pop(reg_idx)
       var_intervals[u] = var
     for i, u in enumerate(uops):
       for src in u.src:
@@ -1085,9 +1092,12 @@ class AsmRenderer(Renderer):
         print(i, v, oneline_uop(u))
     if Arch.x86:
       r.blocked.append(IReg(5))
-
+    
+    r.bookkeeping()
     for i,u in enumerate(uops):
       self.r.cur_step = i
+      print("=================================")
+      print(i, r.uops[u], u)
       if DEBUG.value >= 6:
         print("=================================")
         print(i, r.uops[u], u)
@@ -1122,6 +1132,8 @@ class AsmRenderer(Renderer):
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
         kernel.extend(l)
+      r.bookkeeping()
+
     if Arch.x86:
       stack_alloc = [f"sub rsp, {r.stack_size}"]
     else:
