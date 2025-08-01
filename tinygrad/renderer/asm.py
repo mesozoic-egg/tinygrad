@@ -208,11 +208,35 @@ x86_params: dict[int, int] = {
   4: 8, #R8
   5: 9, #R9 
 }
+
+class AllocatorPool:
+  def __init__(self, reg_type: type[RegBase], num: int):
+    self.reg_type, self.num = reg_type, num
+    self._pool: list[RegBase] = [reg_type(i) for i in range(num)]
+
+  @property
+  def pool(self):
+    return self._pool
+
+  def __len__(self): return len(self._pool)
+
+  def pop(self, i):
+    return self._pool.pop(i)
+  
+  def insert(self, i, v):
+    self._pool.insert(i, v)
+
+  def index(self, reg):
+    return self._pool.index(reg)
+
+  def __getitem__(self, i):
+    return self._pool[i]
+
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int):
-    self.pools: dict[type[RegBase], list[RegBase]] = {
-      IReg: [IReg(i) for i in range(num_ireg)],
-      FReg: [FReg(i) for i in range(num_freg)]
+    self.pools: dict[type[RegBase], AllocatorPool] = {
+      IReg: AllocatorPool(IReg, num_ireg),
+      FReg: AllocatorPool(FReg, num_ireg),
     }
     self.uops: dict[UOp, Variable] = {}
     self.reserved: dict[RegBase, int] = {}
