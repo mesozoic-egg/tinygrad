@@ -1033,7 +1033,7 @@ x86_rewrite = PatternMatcher([
     lambda ctx, x, a: [f"cvttsd2si {ctx.r.assign(x, reg_type=IReg).render(x.dtype.itemsize)}, {ctx.r.assign_f64(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.int64, dtypes.uint32, dtypes.uint64, dtypes.bool)),)),
-    lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
+    lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign(a, reg_type=IReg).render(a.dtype.itemsize)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.float64, src=(UPat(name="a", dtype=dtypes.int64),)),
     lambda ctx, x, a: [f"cvtsi2sd {ctx.r.assign_f64(x)}, {ctx.r.assign_i32(a)}"]),
@@ -1085,16 +1085,21 @@ arm_rewrite = PatternMatcher([
 
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"fmov {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
+
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
     lambda ctx, x, a: [f"fmov {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.int64),)),
-    lambda ctx, x, a: [ctx.r.share(x, a), []][-1]),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
-    lambda ctx, x, a: [f"scvtf {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.bool),)),
-    lambda ctx, x, a: [f"ucvtf {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
-    lambda ctx, x, a: [f"fcvtzs {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints),)),
+    lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=(dtypes.float32, dtypes.float64)),)),
+    lambda ctx, x, a: [f"fcvtzs {ctx.r.assign(x, reg_type=IReg).render(x.dtype.itemsize)}, {ctx.r.assign_f32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=(dtypes.float32, dtypes.float64),
+        src=(UPat(name="a", dtype=(dtypes.int32, dtypes.int64, dtypes.uint32, dtypes.uint64, dtypes.bool),))),
+    lambda ctx, x, a:
+   [f"scvtf {ctx.r.assign(x, reg_type=FReg).render(x.dtype.itemsize)}, {ctx.r.assign(a, reg_type=IReg).render(a.dtype.itemsize)}"]),
+
 ]) + complex_rewrites
 
 extra_matcher = PatternMatcher([
