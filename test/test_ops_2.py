@@ -644,7 +644,6 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
     helper_test_op([()], lambda x: x.all(), forward_only=True)
 
-  @skipU("MANUAL")
   def test_cmp_lt_backwards(self):
     tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt < 0)).sum().backward()
