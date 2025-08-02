@@ -1116,13 +1116,15 @@ arm_rewrite = PatternMatcher([
 
 ]) + complex_rewrites
 
-def promote_uint(ctx, x: UOp):
-  if x.arg > 0xFFFFFFFF: #4294967295:
-    return x.replace(dtype=dtypes.uint64)
+def fix_uint(ctx, x: UOp):
+  max_val = 0xFFFFFFFF
+  effective_value = x.arg & max_val
+  if x.arg > max_val: #4294967295:
+    return x.replace(arg=effective_value)
   else:
     return x
 extra_matcher = PatternMatcher([
-  (UPat(Ops.CONST, name="x", dtype=dtypes.uint32), promote_uint),
+  (UPat(Ops.CONST, name="x", dtype=dtypes.uint32), fix_uint),
 ])
 
 if Arch.arm:
