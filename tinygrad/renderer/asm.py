@@ -861,10 +861,11 @@ def x86_idiv(ctx, x):
   elif x.op is Ops.MOD:
     result_reg = "rdx"
   else: raise Exception(f"Invalid op {x.op}")
+  extend = "cdq" if x.dtype.itemsize == 4 else "cqo"
   ret = [
     f"mov rax, {_dividend.render64()}",
-    "cdq",
-    f"idiv {_divisor.render32()}",
+    extend,
+    f"idiv {_divisor.render(x.dtype.itemsize)}",
     f"mov {_dst}, {result_reg}",
     *mov2,
   ]
