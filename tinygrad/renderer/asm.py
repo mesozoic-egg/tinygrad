@@ -758,7 +758,10 @@ def cmp_arm(ctx, x, a, b):
     op = "cmp"
   else:
     dst = ctx.r.assign(x, IReg)
-    src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
+    if a == b:
+      src_a = src_b = ctx.r.assign(a, FReg)
+    else:
+      src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
     op = "fcmp"
   size = a.dtype.itemsize
   cmp = "lt" if x.op is Ops.CMPLT else "ne"
@@ -1273,7 +1276,11 @@ class AsmRenderer(Renderer):
       "pop rbp",
       "ret",
     ]
-    mem_data = [f"{a}: {b}" for a,b in mem]
+    mem_data = []
+    for a,b in mem:
+      if b.startswith(".quad"):
+        mem_data.append(f".align 3")
+      mem_data.append(f"{a}: {b}")
     data_section = [
       ".section .data",
       ".p2align 3",
@@ -1295,7 +1302,7 @@ class AsmRenderer(Renderer):
 {_kernel}
     """
     if folder:=os.environ.get("SAVE_ASM"):
-      with open(f"../tg-dev/{folder}/kernel.s", "wt") as f: f.write(ret)
+      with open(f"../tg-dev/{folder}/{name}.s", "wt") as f: f.write(ret)
     return ret
 
 #TESTS

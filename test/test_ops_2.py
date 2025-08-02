@@ -645,14 +645,18 @@ class TestOps(unittest.TestCase):
     helper_test_op([()], lambda x: x.all(), forward_only=True)
 
   def test_cmp_lt_backwards(self):
+    Tensor.manual_seed(0)
     tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt < 0)).sum().backward()
+    print(f"{tt.grad.numpy()=}")
     t = torch.tensor(tt.numpy(), requires_grad=True)
     (t*(t < 0)).sum().backward()
+    print(f"{tt.grad.numpy()=}")
     np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
 
   @skipU("MANUAL")
   def test_manual(self):
+    Tensor.manual_seed(0)
     tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt < 0)).sum().backward()
     t = torch.tensor(tt.numpy(), requires_grad=True)
