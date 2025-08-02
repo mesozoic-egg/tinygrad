@@ -1097,10 +1097,10 @@ arm_rewrite = PatternMatcher([
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float64, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldr {ctx.r.assign_f64(x)}, [{ctx.r.assign_i64(src)}]"]),
 
-  (UPat(Ops.BITCAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
+  (UPat(Ops.BITCAST, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"fmov {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
 
-  (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
+  (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"fmov {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints),)),
@@ -1116,8 +1116,13 @@ arm_rewrite = PatternMatcher([
 
 ]) + complex_rewrites
 
+def promote_uint(ctx, x: UOp):
+  if x.arg > 0xFFFFFFFF: #4294967295:
+    return x.replace(dtype=dtypes.uint64)
+  else:
+    return x
 extra_matcher = PatternMatcher([
-  #(UPat(Ops.ASSIGN, name="assign", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat((Ops.ADD,), name="add"))), lambda ctx, assign, acc, add: add),
+  (UPat(Ops.CONST, name="x", dtype=dtypes.uint32), promote_uint),
 ])
 
 if Arch.arm:
