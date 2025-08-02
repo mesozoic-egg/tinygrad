@@ -579,14 +579,22 @@ def const(ctx, x):
   reg_str = reg.render(x.dtype.itemsize)
   label = f"const_{len(ctx.mem)}"
   if Arch.arm:
-    if x.dtype.itemsize == 4: data_type = ".single"
-    else: data_type = ".double"
+    if x.dtype == dtypes.int64 or x.dtype == dtypes.uint64:
+      data_type = ".quad"
+    elif x.dtype == dtypes.int32 or x.dtype == dtypes.uint32:
+      data_type = ".word"
+    elif x.dtype.itemsize == 4:
+      data_type = ".single"
+    else:
+      data_type = ".double"
     ctx.mem.append((label, f"{data_type} {x.arg}"))
     temp_reg = ctx.r.alloc(IReg, [reg])
     ctx.r.return_reg([temp_reg])
     return [f"adrp {temp_reg}, {label}",
       f"ldr {reg_str}, [{temp_reg}, #:lo12:{label}]"]
   else:
+    if dtypes.is_int(x.dtype):
+      raise Exception("Do not handle integer on x86 in the data section on x86")
     if x.dtype.itemsize == 4:
       data_type = ".float"
       op = "movss"
@@ -982,7 +990,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i32(src)}"]),
 
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int64))),
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int64, dtypes.uint64)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i64(src)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float32))),
@@ -1049,15 +1057,15 @@ arm_rewrite = PatternMatcher([
                                   UPat(name="b"))),
    cmp_arm),
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, #{x.arg}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.int32)), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.int64, dtypes.uint64, dtypes.uint32)), const),
   (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.bool))),
       lambda ctx, x, addr, src: [f"strb {ctx.r.assign_i8(src)}, [{ctx.r.assign_i64(addr)}]"]),
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int))),
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_i32(src)}, [{ctx.r.assign_i64(addr)}]"]),
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int64))),
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int64, dtypes.uint64)))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_i64(src)}, [{ctx.r.assign_i64(addr)}]"]),
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float32))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_f32(src)}, [{ctx.r.assign_i64(addr)}]"]),
@@ -1077,9 +1085,9 @@ arm_rewrite = PatternMatcher([
 
   (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldrb {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
-  (UPat(Ops.LOAD, name="x", dtype=dtypes.int32, src=(UPat(name="src",),)),
+  (UPat(Ops.LOAD, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldr {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
-  (UPat(Ops.LOAD, name="x", dtype=dtypes.int64, src=(UPat(name="src",),)),
+  (UPat(Ops.LOAD, name="x", dtype=(dtypes.int64, dtypes.uint64), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldr {ctx.r.assign_i64(x)}, [{ctx.r.assign_i64(src)}]"]),
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float32, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldr {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
