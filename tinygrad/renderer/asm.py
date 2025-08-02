@@ -211,11 +211,11 @@ class AllocatorPool:
 
   def pop(self, i):
     reg = self._pool.pop(i)
-    print(f"\033[31m{reg} popped\033[0m")
+    #print(f"\033[31m{reg} popped\033[0m")
     return reg
   
   def insert(self, i, v):
-    print(f"\033[32m{v} returned to pool\033[0m")
+    #print(f"\033[32m{v} returned to pool\033[0m")
     self._pool.insert(i, v)
 
   def index(self, reg):
@@ -225,11 +225,11 @@ class AllocatorPool:
     return self._pool[i]
 
   def acquire_reg(self, reg: RegBase, var: Variable):
-    print(f"\033[33m{reg} acquired by {var} {oneline_uop(var.uop)}\033[0m")
+    #print(f"\033[33m{reg} acquired by {var} {oneline_uop(var.uop)}\033[0m")
     self._acquired[reg].add(var)
   def release_reg(self, reg: RegBase, var: Variable):
     assert reg is not None
-    print(f"\033[34m{reg} released from {var} {oneline_uop(var.uop)}\033[0m")
+    #print(f"\033[34m{reg} released from {var} {oneline_uop(var.uop)}\033[0m")
     acquired = self._acquired[reg]
     if var not in acquired: raise Exception(f"Not yet acquired: {var=} {reg=} {acquired=}")
     self._acquired[reg].discard(var)
@@ -1000,7 +1000,7 @@ x86_rewrite = PatternMatcher([
     lambda ctx, x, a: [f"movd {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.int64),)),
     lambda ctx, x, a: [ctx.r.share(x, a), []][-1]),
-  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.bool)),)),
     lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"cvttss2si {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
@@ -1057,6 +1057,8 @@ arm_rewrite = PatternMatcher([
     lambda ctx, x, a: [ctx.r.share(x, a), []][-1]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
     lambda ctx, x, a: [f"scvtf {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.bool),)),
+    lambda ctx, x, a: [f"ucvtf {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"fcvtzs {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
 ]) + complex_rewrites
@@ -1145,8 +1147,6 @@ class AsmRenderer(Renderer):
     r.bookkeeping()
     for i,u in enumerate(uops):
       self.r.cur_step = i
-      print("=================================")
-      print(i, r.uops[u], u)
       if DEBUG.value >= 6:
         print("=================================")
         print(i, r.uops[u], u)

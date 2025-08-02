@@ -631,6 +631,14 @@ class TestOps(unittest.TestCase):
     shapes = ((5, 13, s, 16),  (5, 1, s, 1))
     helper_test_op(shapes, torch_op, tinygrad_op, low=0, high=3)
 
+  def test_cast(self):
+    helper_test_op([(3, 3)], lambda x: x.float())
+    helper_test_op(None, lambda x: x.float(), vals=[[0, 1, 2, 3]], forward_only=True)
+    helper_test_op(None, lambda x: x.float(), vals=[[True, False]], forward_only=True)
+
+  @skipU("MANUAL")
+  def test_cast2(self):
+    pass
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
