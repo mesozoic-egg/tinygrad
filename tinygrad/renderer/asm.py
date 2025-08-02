@@ -203,6 +203,14 @@ class AllocatorPool:
     self._pool: list[RegBase] = [reg_type(i) for i in range(num)]
     self._acquired: dict[RegBase, set[Variable]] = defaultdict(set)
 
+  def __repr__(self):
+    l = []
+    l.append(f"Pool: {self._pool}")
+    l.append(f"Acquired:")
+    for reg, vars in self._acquired.items():
+      l.append(f"\t{reg}: {vars}")
+    return "\n".join(l)
+
   @property
   def pool(self):
     return self._pool
@@ -246,8 +254,8 @@ class AllocatorPool:
       for var in vars:
         if var.reg != reg:
           print(f"{var=} {reg=}, {self._pool}")
-          for reg, vars in self._acquired.items():
-            print(f"\t{reg}: {vars}")
+          for _reg, vars in self._acquired.items():
+            print(f"\t{_reg}: {vars}")
           raise Exception(f"Inconsistent var.reg: {var.reg} and acquired record: {reg}")
 
 class Allocator:
@@ -388,8 +396,11 @@ class Allocator:
         var.reg = reg
       regs[i] = reg
       var.reg = reg
+    for reg, uop_i in zip(alloc_regs, need_alloc):
+      var = self.uops[uops[uop_i]]
       self.pools[reg_type].acquire_reg(reg, var)
-    for reg in regs: assert reg is not None
+    for reg in regs:
+      assert reg is not None
     regs2 = cast(list[RegBase], regs)
     return regs2
 
@@ -692,7 +703,10 @@ def cmp_int_x86(ctx, x, a, b):
 
 def cmpne_float_x86(ctx, x, a, b):
   dst = ctx.r.assign(x, IReg)
-  src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
+  if a == b:
+    src_a = src_b = ctx.r.assign(a, FReg)
+  else:
+    src_a, src_b = ctx.r.assign_multiple([a, b], FReg)
   temp_reg = ctx.r.alloc(FReg, [src_a, src_b, dst])
   temp_reg_2 = ctx.r.alloc(IReg, [src_a, src_b, dst])
   ctx.r.return_reg([temp_reg, temp_reg_2])
@@ -1002,18 +1016,29 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float64, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movsd {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
 
-  (UPat(Ops.BITCAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
+  (UPat(Ops.BITCAST, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
 
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
 
-  (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.int64),)),
-    lambda ctx, x, a: [ctx.r.share(x, a), []][-1]),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints),)),
+    lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
+
   (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.bool)),)),
     lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
+
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"cvttss2si {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.int64, src=(UPat(name="a", dtype=dtypes.float32),)),
+    lambda ctx, x, a: [f"cvttss2si {ctx.r.assign_i64(x)}, {ctx.r.assign_f32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.uint64, src=(UPat(name="a", dtype=dtypes.float32),)),
+    lambda ctx, x, a: [f"VCVTTSS2USI {ctx.r.assign_i64(x)}, {ctx.r.assign_f32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float, src=(UPat(name="a", dtype=dtypes.uint64),)),
+    lambda ctx, x, a: [f"vcvtusi2sd {ctx.r.assign_f64(x)}, {ctx.r.assign_f64(x)}, {ctx.r.assign_i64(a)}"]),
 ]) + complex_rewrites
 
 arm_rewrite = PatternMatcher([

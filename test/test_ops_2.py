@@ -653,7 +653,7 @@ class TestOps(unittest.TestCase):
     np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
 
   @skipU("MANUAL")
-  def test_cast2(self):
+  def test_manual(self):
     tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt < 0)).sum().backward()
     t = torch.tensor(tt.numpy(), requires_grad=True)
