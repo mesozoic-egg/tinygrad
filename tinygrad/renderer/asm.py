@@ -248,7 +248,7 @@ class AllocatorPool:
           print(f"{var=} {reg=}, {self._pool}")
           for reg, vars in self._acquired.items():
             print(f"\t{reg}: {vars}")
-          raise Exception("Inconsistent var.reg: {var.reg} and acquired record: {reg}")
+          raise Exception(f"Inconsistent var.reg: {var.reg} and acquired record: {reg}")
 
 class Allocator:
   def __init__(self, num_ireg: int, num_freg: int):
@@ -957,18 +957,22 @@ x86_rewrite = PatternMatcher([
                                   UPat(name="b"))),
    cmpne_float_x86),
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.int32), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.int64), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.int32, dtypes.uint32)), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.int64, dtypes.uint64)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.bool))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int))),
+
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i32(src)}"]),
+
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.int64))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i64(src)}"]),
+
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float32))),
       lambda ctx, x, addr, src: [f"movss [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f32(src)}"]),
+
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"movsd [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f64(src)}"]),
 
@@ -985,19 +989,25 @@ x86_rewrite = PatternMatcher([
 
   (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
-  (UPat(Ops.LOAD, name="x", dtype=dtypes.int32, src=(UPat(name="src",),)),
+
+  (UPat(Ops.LOAD, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
+
   (UPat(Ops.LOAD, name="x", dtype=dtypes.int64, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x)}, [{ctx.r.assign_i64(src)}]"]),
+
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float32, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movss {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
+
   (UPat(Ops.LOAD, name="x", dtype=dtypes.float64, src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movsd {ctx.r.assign_f32(x)}, [{ctx.r.assign_i64(src)}]"]),
 
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_i32(x)}, {ctx.r.assign_f32(a)}"]),
-  (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.int32),)),
+
+  (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
+
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.int64),)),
     lambda ctx, x, a: [ctx.r.share(x, a), []][-1]),
   (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.bool)),)),

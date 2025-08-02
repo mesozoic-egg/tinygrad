@@ -637,9 +637,28 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, lambda x: x.float(), vals=[[True, False]], forward_only=True)
     helper_test_op([(3, 3)], lambda x: x.int(), forward_only=True)
     helper_test_op([(3, 3)], lambda x: x.bool(), forward_only=True)
+  def test_all(self):
+    helper_test_op([(3,4,5,6)], lambda x: x.all(), forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[True, True]], forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[True, False]], forward_only=True)
+    helper_test_op(None, lambda x: x.all(), vals=[[False, False]], forward_only=True)
+    helper_test_op([()], lambda x: x.all(), forward_only=True)
+
+  @skipU("MANUAL")
+  def test_cmp_lt_backwards(self):
+    tt = Tensor.randn(4, requires_grad=True)
+    (tt*(tt < 0)).sum().backward()
+    t = torch.tensor(tt.numpy(), requires_grad=True)
+    (t*(t < 0)).sum().backward()
+    np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
 
   @skipU("MANUAL")
   def test_cast2(self):
+    tt = Tensor.randn(4, requires_grad=True)
+    (tt*(tt < 0)).sum().backward()
+    t = torch.tensor(tt.numpy(), requires_grad=True)
+    (t*(t < 0)).sum().backward()
+    np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
     pass
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
