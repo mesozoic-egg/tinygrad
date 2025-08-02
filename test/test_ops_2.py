@@ -635,6 +635,8 @@ class TestOps(unittest.TestCase):
     helper_test_op([(3, 3)], lambda x: x.float())
     helper_test_op(None, lambda x: x.float(), vals=[[0, 1, 2, 3]], forward_only=True)
     helper_test_op(None, lambda x: x.float(), vals=[[True, False]], forward_only=True)
+    helper_test_op([(3, 3)], lambda x: x.int(), forward_only=True)
+    helper_test_op([(3, 3)], lambda x: x.bool(), forward_only=True)
 
   @skipU("MANUAL")
   def test_cast2(self):
