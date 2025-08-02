@@ -1032,8 +1032,11 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.float64),)),
     lambda ctx, x, a: [f"cvttsd2si {ctx.r.assign(x, reg_type=IReg).render(x.dtype.itemsize)}, {ctx.r.assign_f64(a)}"]),
 
-  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.int64, dtypes.uint32, dtypes.uint64, dtypes.bool)),)),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.int64, dtypes.uint32, dtypes.uint64)),)),
     lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign(a, reg_type=IReg).render(a.dtype.itemsize)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.bool),)),
+    lambda ctx, x, a: [f"cvtsi2ss {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.float64, src=(UPat(name="a", dtype=dtypes.int64),)),
     lambda ctx, x, a: [f"cvtsi2sd {ctx.r.assign_f64(x)}, {ctx.r.assign_i32(a)}"]),
