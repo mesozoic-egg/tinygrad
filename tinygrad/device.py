@@ -319,6 +319,12 @@ class CPUProgram:
 
   def __call__(self, *bufs, vals=(), wait=False):
     args = list(bufs) + list(vals)
+    if p:=os.environ.get("SAVE_BYTES"):
+      for i, b in enumerate(bufs):
+        print(f"Data {i}:")
+        _bytes = bytes(b)
+        print(", ".join([f"0x{_b:02x}" for _b in _bytes]))
+        print()
     # NOTE: replace this by --target={host's triple}-elf in clang args once we only support macos sequoia and later.
     # Apple relaxes abi requirement for stack arguments to always be at least 8 byte aligned on arm64
     # https://developer.apple.com/documentation/xcode/writing-arm64-code-for-apple-platforms
