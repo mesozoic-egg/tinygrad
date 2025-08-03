@@ -1243,16 +1243,26 @@ class AsmRenderer(Renderer):
       r.free_expired(i)
       if u.op is Ops.DEFINE_GLOBAL:
         var = r.uops[u]
+        reg = None
+        stack = None
         if Arch.arm:
           reg = IReg(u.arg)
         else:
-          reg = IReg(x86_params[u.arg])
+          if u.arg > 5:
+            r.stack_size += 8
+            stack = r.stack_size
+          else:
+            reg = IReg(x86_params[u.arg])
         pool = r.pools[IReg]
-        pool.pop(pool.index(reg))
-        pool.acquire_reg(reg, var)
-        var.reg = reg
-        r.move_var_to_stack(var)
-        kernel.extend(r.flush_kernel())
+        if reg is not None:
+          pool.pop(pool.index(reg))
+          pool.acquire_reg(reg, var)
+          var.reg = reg
+          r.move_var_to_stack(var)
+          kernel.extend(r.flush_kernel())
+        else:
+          assert stack is not None
+          var.stack = stack
           
       elif u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
