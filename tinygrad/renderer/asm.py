@@ -540,8 +540,8 @@ def alu(ctx, x):
   else:
     dst = ctx.r.assign(x, reg_type, src_regs)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
-  _dst = dst.render(dtype.itemsize)
-  src_regs_str = [reg.render(dtype.itemsize) for reg in src_regs]
+  _dst = dst.render(max(4, dtype.itemsize))
+  src_regs_str = [reg.render(max(4, dtype.itemsize)) for reg in src_regs]
   if Arch.arm:
     return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
   else:
@@ -1059,7 +1059,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
 
-  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints),)),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints+(dtypes.bool,)),)),
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.float32),)),
@@ -1128,7 +1128,7 @@ arm_rewrite = PatternMatcher([
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"fmov {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
 
-  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints),)),
+  (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),)),
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=(dtypes.float32, dtypes.float64)),)),
