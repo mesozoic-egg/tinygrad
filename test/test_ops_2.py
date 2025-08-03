@@ -653,6 +653,23 @@ class TestOps(unittest.TestCase):
     (t*(t < 0)).sum().backward()
     print(f"torch: {t.grad.cpu().numpy()=}")
     np.testing.assert_allclose(tt.grad.numpy(), t.grad.cpu().numpy(), rtol=1e-5)
+  def test_cmp_ne_backwards(self):
+    # new grad zeroes these out
+    """
+    t1 = torch.ones(4, requires_grad=True)
+    t2 = torch.ones(4, requires_grad=True)
+    self.assertRaises(RuntimeError, (t1 != t2).sum().backward)
+    tt1 = Tensor.ones(4, requires_grad=True)
+    tt2 = Tensor.ones(4, requires_grad=True)
+    self.assertRaises(RuntimeError, (tt1 != tt2).sum().backward)
+    """
+    Tensor.manual_seed(0)
+    tt = Tensor.randn(1, requires_grad=True)
+    (tt*(tt != 0)).sum().backward()
+    t = torch.tensor(tt.numpy(), requires_grad=True)
+    (t*(t != 0)).sum().backward()
+    np.testing.assert_allclose(tt.grad.numpy(), t.grad.cpu().numpy(), rtol=1e-5)
+
 
   @skipU("MANUAL")
   def test_manual(self):

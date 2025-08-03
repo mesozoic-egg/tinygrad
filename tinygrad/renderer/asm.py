@@ -875,11 +875,16 @@ def x86_idiv(ctx, x):
   elif x.op is Ops.MOD:
     result_reg = "rdx"
   else: raise Exception(f"Invalid op {x.op}")
-  extend = "cdq" if x.dtype.itemsize == 4 else "cqo"
+  if x.dtype == dtypes.uint32 or x.dtype == dtypes.uint64:
+    op = "div"
+    sign_extend = [f"xor {IReg(2).render(x.dtype.itemsize)}, {IReg(2).render(x.dtype.itemsize)}"]
+  else:
+    sign_extend = ["cdq" if x.dtype.itemsize == 4 else "cqo"]
+    op = "idiv"
   ret = [
     f"mov rax, {_dividend.render64()}",
-    extend,
-    f"idiv {_divisor.render(x.dtype.itemsize)}",
+    *sign_extend,
+    f"{op} {_divisor.render(x.dtype.itemsize)}",
     f"mov {_dst}, {result_reg}",
     *mov2,
   ]
