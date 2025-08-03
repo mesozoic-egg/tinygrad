@@ -111,11 +111,12 @@ def move_reg_mem(op: Union[Literal["str"], Literal["ldr"]],
       _op = "mov"
     else:
       _op = "movss" if size == 4 else "movsd"
-
+    
+    offset_str = f"- {stack}" if stack >= 0 else f"+ {-1 * stack}"
     if op == "str":
-      return [f"{_op} [rbp - {stack}], {reg.render64()}"]
+      return [f"{_op} [rbp {offset_str}], {reg.render64()}"]
     else:
-      return [f"{_op} {reg.render64()}, [rbp - {stack}]"]
+      return [f"{_op} {reg.render64()}, [rbp {offset_str}]"]
 
 
 class Variable:
@@ -1230,6 +1231,11 @@ class AsmRenderer(Renderer):
         print(i, v, oneline_uop(u))
     if Arch.x86:
       r.blocked.append(IReg(5))
+
+    for u in uops:
+      if u.op is Ops.DEFINE_GLOBAL and u.arg > 5:
+        var = r.uops[u]
+        var.stack = 8 + (u.arg-5) * 8
     
     r.bookkeeping()
     for i,u in enumerate(uops):
@@ -1248,10 +1254,7 @@ class AsmRenderer(Renderer):
         if Arch.arm:
           reg = IReg(u.arg)
         else:
-          if u.arg > 5:
-            r.stack_size += 8
-            stack = r.stack_size
-          else:
+          if u.arg < 6:
             reg = IReg(x86_params[u.arg])
         pool = r.pools[IReg]
         if reg is not None:
@@ -1260,9 +1263,6 @@ class AsmRenderer(Renderer):
           var.reg = reg
           r.move_var_to_stack(var)
           kernel.extend(r.flush_kernel())
-        else:
-          assert stack is not None
-          var.stack = stack
           
       elif u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
