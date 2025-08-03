@@ -677,7 +677,9 @@ class TestOps(unittest.TestCase):
 
   @skipU("MANUAL")
   def test_manual(self):
-    helper_test_op([(2,3,64,64)], lambda x: x.type(torch.uint8), lambda x: x.cast('uint8'), forward_only=True)
+    helper_test_op(None,
+      lambda x: x.type(torch.uint8).min(),
+      lambda x: x.cast(dtypes.uint8).min(), forward_only=True, vals=[[0, 128]])
     pass
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:

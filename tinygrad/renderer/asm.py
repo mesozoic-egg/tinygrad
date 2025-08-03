@@ -912,7 +912,22 @@ def max_int(ctx, x):
     return [
       f"mov {_dst.render(size)}, {_src1.render(size)}",
       f"cmp {_src1.render(size)}, {_src2.render(size)}",
-      f"cmovl {_dst.render(size)}, {_src2.render(size)}",
+      f"cmovl {_dst.render(8)}, {_src2.render(8)}",
+    ]
+
+def max_uint(ctx, x):
+  src1, src2 = x.src
+  _dst, _src1, _src2 = ctx.r.assign_multiple([x, src1, src2], IReg)
+  size = x.dtype.itemsize
+  if Arch.arm:
+    return [f"cmp {_src1.render(size)}, {_src2.render(size)}",
+            f"csel {_dst.render(size)}, {_src1.render(size)}, {_src2.render(size)}, hi"
+            ]
+  else:
+    return [
+      f"mov {_dst.render(size)}, {_src1.render(size)}",
+      f"cmp {_src1.render(size)}, {_src2.render(size)}",
+      f"cmovb {_dst.render(8)}, {_src2.render(8)}",
     ]
 
 def cast_bool_to_int(ctx, x, a):
@@ -967,7 +982,8 @@ complex_rewrites = PatternMatcher([
     UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"),
     UPat.var("alt")), allow_any_len=True),
    gated_load),
-  (UPat(Ops.MAX, name="x", dtype=dtypes.ints), max_int),
+  (UPat(Ops.MAX, name="x", dtype=dtypes.sints), max_int),
+  (UPat(Ops.MAX, name="x", dtype=dtypes.uints), max_uint),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(GroupOp.ALU, name="x"), alu),
@@ -1132,8 +1148,11 @@ def fix_uint(ctx, x: UOp):
     return x.replace(arg=effective_value)
   else:
     return x
+def fix_uint8(ctx, x: UOp):
+  return x.replace(arg=x.arg % (0xff+1))
 extra_matcher = PatternMatcher([
   (UPat(Ops.CONST, dtype=dtypes.uint, name="x"), fix_uint),
+  (UPat(Ops.CONST, dtype=dtypes.uint8, name="x"), fix_uint8),
 ])
 if Arch.arm:
   extra_matcher += PatternMatcher([
