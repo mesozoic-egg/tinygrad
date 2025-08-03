@@ -994,9 +994,9 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int32, dtypes.uint32)), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int64, dtypes.uint64)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.bool, dtypes.uint8)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.bool))),
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.bool, dtypes.uint8)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
@@ -1011,7 +1011,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"movsd [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f64(src)}"]),
 
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.bool, src=(UPat(name="src"),), allow_any_len=True),
+  (UPat(Ops.DEFINE_REG, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
@@ -1022,7 +1022,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"movsd {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
-  (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
+  (UPat(Ops.LOAD, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
 
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="src",),)),
@@ -1071,9 +1071,9 @@ arm_rewrite = PatternMatcher([
   (UPat(Ops.ADD, name="x", src=(UPat(Ops.DEFINE_REG, name="acc"), UPat(name="src"))), acc),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int32)), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, #{x.arg}"]),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int64, dtypes.uint64, dtypes.uint32)), const),
-  (UPat(Ops.CONST, name="x", dtype=dtypes.bool), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.bool, dtypes.uint8)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
-  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.bool))),
+  (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.bool, dtypes.uint8)))),
       lambda ctx, x, addr, src: [f"strb {ctx.r.assign_i8(src)}, [{ctx.r.assign_i64(addr)}]"]),
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_i32(src)}, [{ctx.r.assign_i64(addr)}]"]),
@@ -1084,7 +1084,7 @@ arm_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_f64(src)}, [{ctx.r.assign_i64(addr)}]"]),
 
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.bool, src=(UPat(name="src"),), allow_any_len=True),
+  (UPat(Ops.DEFINE_REG, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
@@ -1095,7 +1095,7 @@ arm_rewrite = PatternMatcher([
   (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
       lambda ctx, x, src: [f"fmov {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
-  (UPat(Ops.LOAD, name="x", dtype=dtypes.bool, src=(UPat(name="src",),)),
+  (UPat(Ops.LOAD, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldrb {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldr {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
