@@ -685,10 +685,30 @@ class TestOps(unittest.TestCase):
 
   @skipU("MANUAL")
   def test_manual(self):
-    helper_test_op(None,
-      lambda x: x.type(torch.uint8).min(),
-      lambda x: x.cast(dtypes.uint8).min(), forward_only=True, vals=[[0, 128]])
-    pass
+    torch.manual_seed(0)
+    b = torch.randint(3, size=[3,4,5], dtype=torch.int64, requires_grad=False)
+    a = Tensor(b.detach().cpu().numpy().astype(np.int32), dtype=dtypes.int32, requires_grad=False)
+    reduce = "mean"
+    dim = -1
+    helper_test_op([(4,5,6), (4,5,6)],
+      lambda x,src: x.scatter_reduce(dim=dim, index=b, src=src, reduce=reduce),
+      lambda x,src: x.scatter_reduce(dim=dim, index=a, src=src, reduce=reduce), forward_only=True)
+    helper_test_op([(4,5,6), (4,5,6)],
+      lambda x,src: x.scatter_reduce(dim=dim, index=b, src=src, reduce=reduce, include_self=False),
+      lambda x,src: x.scatter_reduce(dim=dim, index=a, src=src, reduce=reduce, include_self=False), forward_only=True)
+
+  @skipU("MANUAL")  
+  def test_params_6(self):
+    t1 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t2 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t3 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t4 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t5 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t6 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t7 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
+    t = (t1 + t2 + t3 + t4+t5+t6+t7).numpy()
+    assert t == [70]
+    print(t)
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
