@@ -683,8 +683,8 @@ def to_bool(ctx, x, a):
       test_op = "cmp"
       reset_op = "xor"
     else:
-      reset_op = "por"
       test_op = "ucomiss" if a.dtype.itemsize == 4 else "ucomisd"
+      reset_op = "xorps"
     return [
       f"xor {dst}, {dst}",
       f"{reset_op} {temp_reg}, {temp_reg}",

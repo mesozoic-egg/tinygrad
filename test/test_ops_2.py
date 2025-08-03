@@ -664,21 +664,19 @@ class TestOps(unittest.TestCase):
     self.assertRaises(RuntimeError, (tt1 != tt2).sum().backward)
     """
     Tensor.manual_seed(0)
-    tt = Tensor.randn(1, requires_grad=True)
+    tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt != 0)).sum().backward()
     t = torch.tensor(tt.numpy(), requires_grad=True)
     (t*(t != 0)).sum().backward()
     np.testing.assert_allclose(tt.grad.numpy(), t.grad.cpu().numpy(), rtol=1e-5)
 
+  def test_logical_not(self):
+    helper_test_op(None, torch.logical_not, Tensor.logical_not, vals=[[True, False, True]], forward_only=True)
+    helper_test_op(None, torch.logical_not, Tensor.logical_not,
+                   vals=[[1.,2.,0.,0.5]], forward_only=True)
 
   @skipU("MANUAL")
   def test_manual(self):
-    Tensor.manual_seed(0)
-    tt = Tensor.randn(4, requires_grad=True)
-    (tt*(tt < 0)).sum().backward()
-    t = torch.tensor(tt.numpy(), requires_grad=True)
-    (t*(t < 0)).sum().backward()
-    np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
     pass
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
