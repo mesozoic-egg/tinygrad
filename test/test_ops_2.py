@@ -675,6 +675,14 @@ class TestOps(unittest.TestCase):
     helper_test_op(None, torch.logical_not, Tensor.logical_not,
                    vals=[[1.,2.,0.,0.5]], forward_only=True)
 
+  def test_min(self):
+    helper_test_op(None,
+      lambda x: x.type(torch.uint8).min(),
+      lambda x: x.cast(dtypes.uint8).min(), forward_only=True, vals=[[[0, 1, 2], [3, 4, 5]]])
+    helper_test_op(None,
+      lambda x: x.type(torch.uint8).min(),
+      lambda x: x.cast(dtypes.uint8).min(), forward_only=True, vals=[[0, 128, 255, 64, 32, 16]])
+
   @skipU("MANUAL")
   def test_manual(self):
     helper_test_op(None,
