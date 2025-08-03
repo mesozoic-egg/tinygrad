@@ -889,8 +889,9 @@ def arm_idiv(ctx, x):
   dividend, divisor = x.src
   _dividend, _divisor, _quotient = ctx.r.assign_multiple(
     [dividend, divisor, x], IReg)
+  op = "udiv" if x.dtype == dtypes.uint32 else "sdiv"
   ret = [
-    f"sdiv {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
+    f"{op} {_quotient.render32()}, {_dividend.render32()}, {_divisor.render32()}"
   ]
   return ret
 
@@ -1122,14 +1123,13 @@ arm_rewrite = PatternMatcher([
 def fix_uint(ctx, x: UOp):
   max_val = 0xFFFFFFFF
   effective_value = x.arg & max_val
-  if x.arg > max_val: #4294967295:
+  if x.arg >= max_val: #4294967295:
     return x.replace(arg=effective_value)
   else:
     return x
 extra_matcher = PatternMatcher([
-  (UPat(Ops.CONST, name="x", dtype=dtypes.uint32), fix_uint),
+  (UPat(Ops.CONST, dtype=dtypes.uint, name="x"), fix_uint),
 ])
-
 if Arch.arm:
   extra_matcher += PatternMatcher([
     (UPat(Ops.MOD, name="x", src=(UPat(name="src1"), UPat(name="src2"))),

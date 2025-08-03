@@ -648,11 +648,11 @@ class TestOps(unittest.TestCase):
     Tensor.manual_seed(0)
     tt = Tensor.randn(4, requires_grad=True)
     (tt*(tt < 0)).sum().backward()
-    print(f"{tt.grad.numpy()=}")
+    print(f"tinygrad: {tt.grad.numpy()=}")
     t = torch.tensor(tt.numpy(), requires_grad=True)
     (t*(t < 0)).sum().backward()
-    print(f"{tt.grad.numpy()=}")
-    np.testing.assert_allclose(t.grad.cpu().numpy(), tt.grad.numpy(), rtol=1e-5)
+    print(f"torch: {t.grad.cpu().numpy()=}")
+    np.testing.assert_allclose(tt.grad.numpy(), t.grad.cpu().numpy(), rtol=1e-5)
 
   @skipU("MANUAL")
   def test_manual(self):
