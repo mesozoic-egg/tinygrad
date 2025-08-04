@@ -1235,7 +1235,7 @@ class AsmRenderer(Renderer):
     for u in uops:
       if u.op is Ops.DEFINE_GLOBAL and u.arg > 5:
         var = r.uops[u]
-        var.stack = 8 + (u.arg-5) * 8
+        var.stack = - 8 - (u.arg-5) * 8
     
     r.bookkeeping()
     for i,u in enumerate(uops):
