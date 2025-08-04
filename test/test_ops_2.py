@@ -720,17 +720,15 @@ class TestOps(unittest.TestCase):
       lambda x,src: x.scatter_reduce(dim=dim, index=b, src=src, reduce=reduce, include_self=False),
       lambda x,src: x.scatter_reduce(dim=dim, index=a, src=src, reduce=reduce, include_self=False), forward_only=True)
 
+  def test_softmax(self):
+    helper_test_op([(45,65)], torch.nn.Softmax(dim=1), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
+    helper_test_op([(9,)], torch.nn.Softmax(dim=0), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
+    helper_test_op([()], torch.nn.Softmax(dim=0), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
+    helper_test_op([()], torch.nn.Softmax(dim=-1), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
+
   @skipU("MANUAL")
   def test_manual(self):
-    torch.manual_seed(0)
-    b = torch.tensor([[0,1,0], [1,0,1]], dtype=torch.int64, requires_grad=False)
-    a = Tensor(b.detach().cpu().numpy().astype(np.int32), dtype=dtypes.int32, requires_grad=False)
-    reduce = "mean"
-    dim = -1
-    shape = (2,3)
-    helper_test_op([shape, shape],
-      lambda x,src: x.scatter_reduce(dim=dim, index=b, src=src, reduce=reduce, include_self=False),
-      lambda x,src: x.scatter_reduce(dim=dim, index=a, src=src, reduce=reduce, include_self=False), forward_only=True)
+    pass
 
   def test_params_6(self):
     t1 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)

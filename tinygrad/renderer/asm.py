@@ -978,7 +978,29 @@ def gated_load(ctx, x, bidx, alt, gate):
       f".END{step}:",
     ]
 
+def define_reg(ctx, x, src):
+  if x.dtype in [dtypes.bool, dtypes.uint8, dtypes.int32]:
+    reg_type = IReg
+    size1, size2 = 4, 4
+    op = "mov"
+  elif x.dtype == dtypes.int64:
+    reg_type = IReg
+    size1, size2 = 8, 8
+    op = "mov"
+  elif x.dtype == dtypes.float32:
+    reg_type = FReg
+    size1, size2 = 4, 4
+    op = "movss" if Arch.x86 else "fmov"
+  elif x.dtype == dtypes.float64:
+    reg_type = FReg
+    size1, size2 = 8, 8
+    op = "movsd" if Arch.x86 else "fmov"
+  else: raise Exception(f"Unsupported dtype {x.dtype=}")
+  acc, src = ctx.r.assign_multiple([x, src], reg_type=reg_type)
+  return [f"{op} {acc.render(size1)}, {src.render(size2)}"]
+
 complex_rewrites = PatternMatcher([
+  (UPat(Ops.DEFINE_REG, name="x", src=(UPat(name="src"),), allow_any_len=True), define_reg),
   (UPat(Ops.LOAD, name="x", src=(
     UPat(Ops.INDEX, src=(UPat(), UPat(), UPat.var("gate"))).or_casted("bidx"),
     UPat.var("alt")), allow_any_len=True),
@@ -997,6 +1019,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.int32, src=(UPat(name="a", dtype=dtypes.bool),)),
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
 ])
+
 x86_rewrite = PatternMatcher([
   (UPat((Ops.IDIV, Ops.MOD), name="x"), x86_idiv),
   (UPat((Ops.CMPNE, Ops.CMPLT), name="x", src=(UPat(name="a", dtype=dtypes.ints + (dtypes.bool,)),
@@ -1028,16 +1051,6 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"movsd [{ctx.r.assign_i64(addr)}], {ctx.r.assign_f64(src)}"]),
 
-  (UPat(Ops.DEFINE_REG, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=False)}, {ctx.r.assign_i64(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"movss {ctx.r.assign_f32(x, reserve=False)}, {ctx.r.assign_f32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"movsd {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
@@ -1100,17 +1113,6 @@ arm_rewrite = PatternMatcher([
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_f32(src)}, [{ctx.r.assign_i64(addr)}]"]),
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=dtypes.float64))),
       lambda ctx, x, addr, src: [f"str {ctx.r.assign_f64(src)}, [{ctx.r.assign_i64(addr)}]"]),
-
-  (UPat(Ops.DEFINE_REG, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x, reserve=False)}, {ctx.r.assign_i32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.int64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"mov {ctx.r.assign_i64(x, reserve=False)}, {ctx.r.assign_i64(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float32, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"fmov {ctx.r.assign_f32(x, reserve=False)}, {ctx.r.assign_f32(src)}"]),
-  (UPat(Ops.DEFINE_REG, name="x", dtype=dtypes.float64, src=(UPat(name="src"),), allow_any_len=True),
-      lambda ctx, x, src: [f"fmov {ctx.r.assign_f64(x, reserve=False)}, {ctx.r.assign_f64(src)}"]),
 
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"ldrb {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),
@@ -1275,7 +1277,8 @@ class AsmRenderer(Renderer):
         l = [*r.flush_kernel(), *l, ""]
         if DEBUG.value >= 6:
           uop_str = [f".uop_{i}:"] + ["//"+_u for _u in str(u).split("\n")][:]
-          l = [*uop_str, *l]
+          var_info = f"//{r.uops[u]}"
+          l = [*uop_str, var_info, *l]
           print("\n".join(kernel)[-100:])
           print("\033[32m", "\n".join(l), "\033[0m", sep="")
         kernel.extend(l)
