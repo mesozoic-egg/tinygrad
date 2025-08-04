@@ -796,8 +796,10 @@ def recip(ctx, x):
 
 
 def _where(ctx, x):
-  if dtypes.is_int(x.dtype): reg_type = IReg
-  else: reg_type = FReg
+  if dtypes.is_float(x.dtype):
+    reg_type = FReg
+  else:
+    reg_type = IReg
   cond, t, f = x.src
   _cond = ctx.r.assign(cond, reg_type=IReg)
   exclude_cond = [cond] if reg_type == IReg else []
@@ -813,8 +815,10 @@ def _where(ctx, x):
 	f"{op} {_dst.render(size)}, {_t.render(size)}, {_f.render(size)}, ne"  # Select _t if true, _f if false
     ]
   else:
-    if dtypes.is_int(x.dtype): mov_op = "mov"
-    else: mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
+    if dtypes.is_float(x.dtype):
+      mov_op = "movaps" if x.dtype.itemsize == 4 else "movapd"
+    else:
+      mov_op = "mov"
     return [
       f"test {_cond}, {_cond}", #ZF=1 if _cond=0 => false
       f"jz .f_case_{ctx.r.cur_step}", #jump if ZF=1 => condition is false

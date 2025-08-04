@@ -730,6 +730,11 @@ class TestOps(unittest.TestCase):
   def test_manual(self):
     pass
 
+  def test_scaled_dot_product_attention_causal(self):
+    helper_test_op([(32,8,16,64), (32,8,16,64), (32,8,16,64)],
+                   lambda x,y,z: torch.nn.functional.scaled_dot_product_attention(x,y,z,is_causal=True),
+                   lambda x,y,z: Tensor.scaled_dot_product_attention(x,y,z,is_causal=True))
+
   def test_params_6(self):
     t1 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
     t2 = Tensor(np.array([10], dtype=np.int32), dtype=dtypes.int32)
