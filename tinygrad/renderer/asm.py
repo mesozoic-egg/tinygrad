@@ -975,7 +975,6 @@ def gated_load(ctx, x, bidx, alt, gate):
     mov_op = "mov" if reg_type is IReg else "fmov"
     mem_op = {1: "ldrb", 2: "ldrh", 4: "ldr", 8: "ldr"}.get(size)
     return [
-      f"eor {_x}, {_x}",
       f"cmp {_gate}, #1",
       f"b.ne .ALT{step}",
       f"{mem_op} {_x.render(size)}, [{_bidx}]",
