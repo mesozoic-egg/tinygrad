@@ -960,7 +960,9 @@ def gated_load(ctx, x, bidx, alt, gate):
   size = x.dtype.itemsize
   if Arch.x86:
     op = "mov" if reg_type is IReg else "movss" if size == 4 else "movsd"
+    clear_op = "xor" if reg_type is IReg else "xorps" if x.dtype.itemsize == 4 else "xorpd"
     return [
+      f"{clear_op} {_x}, {_x}",
       f"cmp {_gate}, 1",
       f"jne .ALT{step}",
       f"{op} {_x.render(size)}, [{_bidx}]",
@@ -973,6 +975,7 @@ def gated_load(ctx, x, bidx, alt, gate):
     mov_op = "mov" if reg_type is IReg else "fmov"
     mem_op = {1: "ldrb", 2: "ldrh", 4: "ldr", 8: "ldr"}.get(size)
     return [
+      f"eor {_x}, {_x}",
       f"cmp {_gate}, #1",
       f"b.ne .ALT{step}",
       f"{mem_op} {_x.render(size)}, [{_bidx}]",
@@ -1057,7 +1060,7 @@ x86_rewrite = PatternMatcher([
 
 
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.bool, dtypes.uint8), src=(UPat(name="src",),)),
-     lambda ctx, x, src: [f"movzx {ctx.r.assign_i32(x)}, byte ptr [{ctx.r.assign_i64(src)}]"]),
+     lambda ctx, x, src: [f"movzx {ctx.r.assign(x, reg_type=IReg).render32()}, byte ptr [{ctx.r.assign_i64(src)}]"]),
 
   (UPat(Ops.LOAD, name="x", dtype=(dtypes.int32, dtypes.uint32), src=(UPat(name="src",),)),
      lambda ctx, x, src: [f"mov {ctx.r.assign_i32(x)}, [{ctx.r.assign_i64(src)}]"]),

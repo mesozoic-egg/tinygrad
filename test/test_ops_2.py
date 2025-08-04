@@ -728,8 +728,8 @@ class TestOps(unittest.TestCase):
 
   @skipU("MANUAL")
   def test_manual(self):
+    helper_test_op([(2, 4)], lambda x: x.masked_select(x>0.5), lambda x: x.masked_select(x>0.5), forward_only=True)
     pass
-
   def test_scaled_dot_product_attention_causal(self):
     helper_test_op([(32,8,16,64), (32,8,16,64), (32,8,16,64)],
                    lambda x,y,z: torch.nn.functional.scaled_dot_product_attention(x,y,z,is_causal=True),
