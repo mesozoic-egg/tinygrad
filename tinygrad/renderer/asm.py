@@ -1097,6 +1097,9 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.CAST, name="x", dtype=dtypes.float64, src=(UPat(name="a", dtype=dtypes.int64),)),
     lambda ctx, x, a: [f"cvtsi2sd {ctx.r.assign_f64(x)}, {ctx.r.assign_i32(a)}"]),
 
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float64, src=(UPat(name="a", dtype=dtypes.float32),)),
+    lambda ctx, x, a: [f"cvtps2pd {ctx.r.assign_f64(x)}, {ctx.r.assign_f32(a)}"]),
+
 ]) + complex_rewrites
 
 arm_rewrite = PatternMatcher([
