@@ -505,6 +505,7 @@ class _AluOps:
 
 AluOps = _AluOps({
   (Ops.ADD, ArchType.X86, IReg): "add",
+  (Ops.ADD, ArchType.X86, FReg, 16): "vaddsh",
   (Ops.ADD, ArchType.X86, FReg, 32): "addss",
   (Ops.ADD, ArchType.X86, FReg, 64): "addsd",
   (Ops.ADD, ArchType.ARM, IReg): "add",
@@ -512,6 +513,7 @@ AluOps = _AluOps({
   (Ops.SUB, ArchType.ARM, IReg): "sub",
   (Ops.SUB, ArchType.ARM, FReg): "fsub",
   (Ops.MUL, ArchType.X86, IReg): "imul",
+  (Ops.MUL, ArchType.X86, FReg, 16): "vmulsh",
   (Ops.MUL, ArchType.X86, FReg, 32): "mulss",
   (Ops.MUL, ArchType.X86, FReg, 64): "mulsd",
   (Ops.MUL, ArchType.ARM, IReg): "mul",
@@ -540,6 +542,7 @@ AluOps = _AluOps({
 
 def alu(ctx, x):
   dtype = x.src[0].dtype
+  assert x.dtype != dtypes.float16
   reg_type = IReg if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else FReg
   src_regs = ctx.r.assign_multiple(list(x.src), reg_type)
 
@@ -604,6 +607,14 @@ def x86_uint8_alu(ctx, x):
           f"mov {_dst}, rax",
           *mov2,
           ]
+
+def x86_alu_half(ctx, x):
+  reg_type = FReg
+  dst, *src_regs = ctx.r.assign_multiple([x] + list(x.src), reg_type)
+  operator = AluOps.get((x.op, Arch.arch, reg_type, 16))
+  src_strs =  ', '.join([r.render64() for r in src_regs])
+  ret = [f"{operator} {dst}, {src_strs}"]
+  return ret
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
@@ -1051,6 +1062,57 @@ def define_reg(ctx, x, src):
   acc, src = ctx.r.assign_multiple([x, src], reg_type=reg_type)
   return [f"{op} {acc.render(size1)}, {src.render(size2)}"]
 
+def x86_cast_half2f32(ctx, x, a):
+  vars_holding_xmm1 = ctx.r.find_vars_holding_reg(FReg(1))
+  for var in vars_holding_xmm1:
+    if var.stack is None:
+      ctx.r.stack_size += (var.reg.size // 8)
+      var.stack = ctx.r.stack_size
+    ctx.r.kernel.extend(var.store())
+    var.reg = None
+    ctx.r.pools[FReg].release_reg(FReg(1), var)
+  vars_holding_xmm2 = ctx.r.find_vars_holding_reg(FReg(2))
+  for var in vars_holding_xmm2:
+    if var.stack is None:
+      ctx.r.stack_size += (var.reg.size // 8)
+      var.stack = ctx.r.stack_size
+    ctx.r.kernel.extend(var.store())
+    var.reg = None
+    ctx.r.pools[FReg].release_reg(FReg(2), var)
+  mov2 = []
+  dst, src = ctx.r.assign_multiple([x, a], reg_type=FReg, 
+                                   excludes=[FReg(1), FReg(2)])
+  if len(vars_holding_xmm1) >= 1:
+    var0 = vars_holding_xmm1[0]
+    mov2.extend([
+      *move_reg_mem("ldr", FReg(1), var0.stack, 8)
+    ])
+    for var in vars_holding_xmm1:
+      if var.reg is not None:
+        ctx.r.pools[FReg].release_reg(var.reg, var)
+        if var.reg not in ctx.r.pools[FReg]._acquired:
+          ctx.r.pools[FReg].insert(0, var.reg)
+      var.reg = FReg(1)
+      ctx.r.pools[FReg].acquire_reg(FReg(1), var)
+  if len(vars_holding_xmm2) >= 1:
+    var0 = vars_holding_xmm2[0]
+    mov2.extend([
+      *move_reg_mem("ldr", FReg(2), var0.stack, 8)
+    ])
+    for var in vars_holding_xmm2:
+      if var.reg is not None:
+        ctx.r.pools[FReg].release_reg(var.reg, var)
+        if var.reg not in ctx.r.pools[FReg]._acquired:
+          ctx.r.pools[FReg].insert(0, var.reg)
+      var.reg = FReg(2)
+      ctx.r.pools[FReg].acquire_reg(FReg(2), var)
+  return [
+    f"movss xmm2, {src}",
+    f"vcvtph2ps xmm1, xmm2",
+    f"movss {dst}, xmm1",
+    *mov2
+    ]
+
 complex_rewrites = PatternMatcher([
   (UPat(Ops.DEFINE_REG, name="x", src=(UPat(name="src"),), allow_any_len=True), define_reg),
   (UPat(Ops.LOAD, name="x", src=(
@@ -1062,6 +1124,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
   (UPat(Ops.MUL, name="x", dtype=dtypes.uint8), x86_uint8_alu),
+  (UPat(GroupOp.ALU, name="x", dtype=dtypes.float16), x86_alu_half),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
@@ -1156,6 +1219,9 @@ x86_rewrite = PatternMatcher([
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.float16, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"vcvtps2ph {ctx.r.assign(x, reg_type=FReg).render32()}, {ctx.r.assign_f32(a)}, 0"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=dtypes.float16),)),
+   x86_cast_half2f32)
 
 ]) + complex_rewrites
 
