@@ -549,26 +549,61 @@ def alu(ctx, x):
   else:
     dst = ctx.r.assign(x, reg_type, src_regs)
   operator = AluOps.get((x.op, Arch.arch, reg_type, 8*x.dtype.itemsize))
-  _dst = dst.render(max(4, dtype.itemsize))
-  src_regs_str = [reg.render(max(4, dtype.itemsize)) for reg in src_regs]
+  _dst = dst.render(max(2, dtype.itemsize))
+  src_regs_str = [reg.render(max(2, dtype.itemsize)) for reg in src_regs]
   if Arch.arm:
-    return [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
+    ret = [f"{operator} {_dst}, {', '.join(src_regs_str)}"]
+    return ret
   else:
     _mov = "mov" if dtypes.is_int(dtype) or dtypes.is_bool(dtype) else "movss" 
     if dst == src_regs[0] and len(src_regs_str) == 2:
-      return [f"{operator} {_dst}, {src_regs_str[1]}"]
+      ret = [f"{operator} {_dst}, {src_regs_str[1]}"]
     elif len(src_regs_str) == 2:
       clear_op = "xor" if reg_type is IReg else "xorps" if dtype.itemsize == 4 else "xorpd"
-      return [
+      ret = [
         f"{clear_op} {dst}, {dst}",
         f"{_mov} {_dst}, {src_regs_str[0]}",
         f"{operator} {_dst}, {src_regs_str[1]}",]
     elif _dst == src_regs_str[0] and len(src_regs_str) == 1:
-      return [f"{operator} {_dst}, {src_regs_str[0]}"]
+      ret = [f"{operator} {_dst}, {src_regs_str[0]}"]
     elif len(src_regs_str) == 1:
-      return [f"{operator} {_dst}, {src_regs_str[0]}"]
+      ret = [f"{operator} {_dst}, {src_regs_str[0]}"]
     else:
       raise Exception("ALU error handling srcs")
+    return ret
+
+def x86_uint8_alu(ctx, x):
+  reg_type = IReg
+  vars_holding_eax = ctx.r.find_vars_holding_reg(IReg(0))
+  for var in vars_holding_eax:
+    if var.stack is None:
+      ctx.r.stack_size += (var.reg.size // 8)
+      var.stack = ctx.r.stack_size
+    ctx.r.kernel.extend(var.store())
+    var.reg = None
+    ctx.r.pools[IReg].release_reg(IReg(0), var)
+  _dst, *srcs = ctx.r.assign_multiple([x] + list(x.src), reg_type=IReg, excludes=[IReg(0)])
+  src_str = [reg.render8() for reg in srcs]
+  operator = AluOps.get((x.op, Arch.arch, IReg))
+  mov2 = []
+  if len(vars_holding_eax) >= 1:
+    var0 = vars_holding_eax[0]
+    mov2.extend([
+      *move_reg_mem("ldr", IReg(0), var0.stack, 8)
+    ])
+    for var in vars_holding_eax:
+      if var.reg is not None:
+        ctx.r.pools[IReg].release_reg(var.reg, var)
+        if var.reg not in ctx.r.pools[IReg]._acquired:
+          ctx.r.pools[IReg].insert(0, var.reg)
+      var.reg = IReg(0)
+      ctx.r.pools[IReg].acquire_reg(IReg(0), var)
+  return [f"xor rax, rax",
+          f"movzx rax, {src_str[0]}",
+          f"{operator} {src_str[1]}",
+          f"mov {_dst}, rax",
+          *mov2,
+          ]
 
 def acc(ctx, x, acc, src):
   dtype = x.src[0].dtype
@@ -1026,6 +1061,7 @@ complex_rewrites = PatternMatcher([
   (UPat(Ops.MAX, name="x", dtype=dtypes.uints), max_uint),
   (UPat(Ops.RECIP, name="x"), recip), 
   (UPat(Ops.WHERE, name="x"), _where),
+  (UPat(Ops.MUL, name="x", dtype=dtypes.uint8), x86_uint8_alu),
   (UPat(GroupOp.ALU, name="x"), alu),
   (UPat(Ops.ASSIGN, name="x"), assign),
   (UPat(Ops.INDEX, name="x"), _index),
@@ -1055,7 +1091,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int16, dtypes.uint16)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.bool, dtypes.uint8)))),
-      lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
+      lambda ctx, x, addr, src: [f"mov byte ptr [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.int, dtypes.uint32)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i32(src)}"]),
@@ -1090,6 +1126,9 @@ x86_rewrite = PatternMatcher([
 
   (UPat(Ops.BITCAST, name="x", dtype=dtypes.float32, src=(UPat(name="a", dtype=(dtypes.int32, dtypes.uint32)),)),
     lambda ctx, x, a: [f"movd {ctx.r.assign_f32(x)}, {ctx.r.assign_i32(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=dtypes.uint8, src=(UPat(name="a", dtype=dtypes.uint16),)),
+    lambda ctx, x, a: [f"movzx {ctx.r.assign_i64(x)}, {ctx.r.assign(a, reg_type=IReg).render8()}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints+(dtypes.bool,)),)),
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),

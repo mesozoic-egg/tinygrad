@@ -726,10 +726,7 @@ class TestOps(unittest.TestCase):
     helper_test_op([()], torch.nn.Softmax(dim=0), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
     helper_test_op([()], torch.nn.Softmax(dim=-1), Tensor.softmax, atol=1e-7, grad_atol=1e-7)
 
-  @skipU("MANUAL")
-  def test_manual(self):
-    helper_test_op([(2, 4)], lambda x: x.masked_select(x>0.5), lambda x: x.masked_select(x>0.5), forward_only=True)
-    pass
+
   def test_scaled_dot_product_attention_causal(self):
     helper_test_op([(32,8,16,64), (32,8,16,64), (32,8,16,64)],
                    lambda x,y,z: torch.nn.functional.scaled_dot_product_attention(x,y,z,is_causal=True),
@@ -746,6 +743,26 @@ class TestOps(unittest.TestCase):
     t = (t1 + t2 + t3 + t4+t5+t6+t7).numpy()
     assert t == [100]
     print(t)
+
+  def test_interpolate_bilinear2(self):
+    out_sz = (2, 1)
+    helper_test_op([(1,1,1,4)],
+      lambda x: torch.nn.functional.interpolate((10*x).relu().type(torch.uint8), size=out_sz, mode="bilinear"),
+      lambda x: Tensor.interpolate((10*x).relu().cast('uint8'), size=out_sz, mode="linear"), forward_only=True)
+
+  def test_interpolate_bilinear(self):
+    out_sz = (10, 10)
+    helper_test_op([(2,3,64,64)],
+      lambda x: torch.nn.functional.interpolate((10*x).relu().type(torch.uint8), size=out_sz, mode="bilinear"),
+      lambda x: Tensor.interpolate((10*x).relu().cast('uint8'), size=out_sz, mode="linear"), forward_only=True)
+
+  @skipU("MANUAL")
+  def test_manual(self):
+    out_sz = (10, 10)
+    helper_test_op([(2,3,64,64)],
+      lambda x: torch.nn.functional.interpolate((10*x).relu().type(torch.uint8), size=out_sz, mode="bilinear"),
+      lambda x: Tensor.interpolate((10*x).relu().cast('uint8'), size=out_sz, mode="linear"), forward_only=True)
+    pass
 
 def speedrun(name: str, c: Tensor, repeat: int,) -> np.ndarray:
   res = c.clone().numpy()
