@@ -320,8 +320,8 @@ class CPUProgram:
   def __call__(self, *bufs, vals=(), wait=False):
     args = list(bufs) + list(vals)
     if p:=os.environ.get("SAVE_BYTES"):
-      for i, b in enumerate(bufs):
-        print(f"Data {i}:")
+      for i, b in enumerate(bufs[1:]):
+        print(f"Data {i+1}:")
         _bytes = bytes(b)
         print(", ".join([f"0x{_b:02x}" for _b in _bytes]))
         print()
@@ -331,7 +331,14 @@ class CPUProgram:
     # This hack is required because clang/llvm bug doesn't allow us to just use {host's triple}+'-elf' (relocation failures)
     # The bug was fixed in https://github.com/llvm/llvm-project/commit/454cc36630296262cdb6360b60f90a64a97f7f1a but was only backported to xcode 16+
     if platform.machine() == "arm64" and OSX: args = args[:8] + [ctypes.c_int64(a) if isinstance(a, int) else a for a in args[8:]]
-    return cpu_time_execution(lambda: self.fxn(*args), enable=wait)
+    ret = cpu_time_execution(lambda: self.fxn(*args), enable=wait)
+    if p:=os.environ.get("SAVE_BYTES"):
+      for i, b in enumerate(bufs[0:1]):
+        print(f"Data {i}:")
+        _bytes = bytes(b)
+        print(", ".join([f"0x{_b:02x}" for _b in _bytes]))
+        print()
+    return
 
   def __del__(self):
     if sys.platform == 'win32': ctypes.windll.kernel32.VirtualFree(ctypes.c_void_p(self.mem), ctypes.c_size_t(0), 0x8000) #0x8000 - MEM_RELEASE
