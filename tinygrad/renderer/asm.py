@@ -59,6 +59,13 @@ class IReg(RegBase):
         return ["al", "cl", "dl", "bl", "spl", "bpl", "sil", "dil"][self.id]
       else:
         return f"r{self.id}b"
+  def render16(self):
+    if Arch.arm: return self.render32()
+    else:
+      if self.id < 8:
+        return ["ax", "cx", "dx", "bx", "sp", "bp", "si", "di"][self.id]
+      else:
+        return f"r{self.id}w"
   def render32(self):
     if Arch.arm: return f"w{self.id}"
     else: return ["eax", "ecx", "edx", "ebx", "esp", "ebp", "esi", "edi",
@@ -72,6 +79,7 @@ class IReg(RegBase):
     itemsize: bytes
     """
     if itemsize == 1: return self.render8()
+    if itemsize == 2: return self.render16()
     if itemsize == 4: return self.render32()
     if itemsize == 8: return self.render64()
     raise Exception(f"Either 4 or 8 bytes for register, received {itemsize}")
@@ -585,6 +593,8 @@ def const(ctx, x):
       data_type = ".quad"
     elif x.dtype == dtypes.int32 or x.dtype == dtypes.uint32:
       data_type = ".word"
+    elif x.dtype == dtypes.short:
+      data_type = ".hword"
     elif x.dtype.itemsize == 4:
       data_type = ".single"
     else:
@@ -602,9 +612,10 @@ def const(ctx, x):
     if x.dtype.itemsize == 4:
       data_type = ".float"
       op = "movss"
-    else:
+    elif x.dtype.itemsize == 8:
       data_type = ".double"
       op = "movsd"
+    else: raise Exception(f"invalid itemsize {x.dtype=}")
     ctx.mem.append((label, f"{data_type} {x.arg}"))
     return [ f"{op} {reg_str}, [rip+{label}]" ]
 
@@ -880,7 +891,7 @@ def x86_idiv(ctx, x):
   elif x.op is Ops.MOD:
     result_reg = "rdx"
   else: raise Exception(f"Invalid op {x.op}")
-  if x.dtype == dtypes.uint32 or x.dtype == dtypes.uint64:
+  if x.dtype == dtypes.uint32 or x.dtype == dtypes.uint64 or x.dtype == dtypes.uint16:
     op = "div"
     sign_extend = [f"xor {IReg(2).render(x.dtype.itemsize)}, {IReg(2).render(x.dtype.itemsize)}"]
   else:
@@ -1041,6 +1052,7 @@ x86_rewrite = PatternMatcher([
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int32, dtypes.uint32)), lambda ctx, x: [f"mov {ctx.r.assign_i32(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.int64, dtypes.uint64)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {x.arg:#x}"]),
   (UPat(Ops.CONST, name="x", dtype=(dtypes.bool, dtypes.uint8)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
+  (UPat(Ops.CONST, name="x", dtype=(dtypes.int16, dtypes.uint16)), lambda ctx, x: [f"mov {ctx.r.assign_i64(x)}, {int(x.arg)}"]),
 
   (UPat(Ops.STORE, name="x", src=(UPat(name="addr"), UPat(name="src", dtype=(dtypes.bool, dtypes.uint8)))),
       lambda ctx, x, addr, src: [f"mov [{ctx.r.assign_i64(addr)}], {ctx.r.assign_i8(src)}"]),
@@ -1081,6 +1093,9 @@ x86_rewrite = PatternMatcher([
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.ints+(dtypes.bool,)),)),
     lambda ctx, x, a: [f"mov {ctx.r.assign_i64(x)}, {ctx.r.assign_i64(a)}"]),
+
+  (UPat(Ops.CAST, name="x", dtype=(dtypes.int16, dtypes.uint16), src=(UPat(name="a", dtype=dtypes.float32),)),
+    lambda ctx, x, a: [f"cvttss2si {ctx.r.assign(x, reg_type=IReg).render(4)}, {ctx.r.assign_f32(a)}"]),
 
   (UPat(Ops.CAST, name="x", dtype=dtypes.ints, src=(UPat(name="a", dtype=dtypes.float32),)),
     lambda ctx, x, a: [f"cvttss2si {ctx.r.assign(x, reg_type=IReg).render(x.dtype.itemsize)}, {ctx.r.assign_f32(a)}"]),
