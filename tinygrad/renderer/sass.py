@@ -1,4 +1,4 @@
-from typing import cast, Callable
+from typing import cast, Callable, Union, Mapping
 import struct
 from collections import defaultdict
 from tinygrad.codegen.opt import tc
@@ -8,7 +8,12 @@ from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import CUDARenderer
 from tinygrad.helpers import flatten, get_single_element, prod
 
-
+def dict_to_str(d: Mapping[str, Union[str, int]]):
+  ret = ""
+  for k, v in d.items():
+    ret += f"{k}  {v}\n"
+  return ret
+  
 class SASSRenderer(Renderer):
   device = "CUDA"
   suffix = "SASS"
@@ -16,10 +21,28 @@ class SASSRenderer(Renderer):
   tc_sm80 = [x for x in tc.cuda_sm80 if x.dtype_in in [dtypes.half, dtypes.float]]
   def __init__(self, arch:str, device="CUDA"):
     self.device, self.arch = device, arch
-  def __reduce__(self): return self.__class__, (self.arch, self.device)
 
   def render(self, uops:list[UOp]) -> str:
-    return """
+    elf_header: dict[str, str] = {
+      ".__elf_ident_osabi": "51",
+      ".__elf_ident_abiversion": "7",
+      ".__elf_type": "ET_EXEC",
+      ".__elf_machine": "EM_CUDA",
+      ".__elf_version": "129",
+      ".__elf_entry": "0",
+      ".__elf_phoff": "0xa00",
+      ".__elf_shoff": "0x700",
+      ".__elf_flags": "0x560556",
+      ".__elf_ehsize": "64",
+      ".__elf_phentsize": "56",
+      ".__elf_phnum": "3",
+      ".__elf_shentsize": "64",
+      ".__elf_shnum": "12",
+      ".__elf_shstrndx": "1",
+    }
+    ret = ""
+    ret += dict_to_str(elf_header)
+    ret += """
 // --------------------- FileHeader --------------------------
 	// All file header info is kept as is (unless offset/size attributes)
 	// The original header flags is not complete, thus discarded. 
@@ -27,21 +50,21 @@ class SASSRenderer(Renderer):
 	// 	.elftype	@"ET_EXEC"
 	// 
 	// 
-	.__elf_ident_osabi      51
-	.__elf_ident_abiversion 7
-	.__elf_type             ET_EXEC
-	.__elf_machine          EM_CUDA
-	.__elf_version          129 		// CUDA toolkit version 
-	.__elf_entry            0 		// entry point address 
-	.__elf_phoff            0xa00 		// program header offset, maybe updated by assembler
-	.__elf_shoff            0x700 		// section header offset, maybe updated by assembler
-	.__elf_flags            0x560556 		// Flags, SM_86(0x56), COMPUTE_86(0x56) 
-	.__elf_ehsize           64 		// elf header size 
-	.__elf_phentsize        56 		// program entry size
-	.__elf_phnum            3 		// number of program entries
-	.__elf_shentsize        64 		// section entry size
-	.__elf_shnum            12 		// number of sections, currently no sections can be appended/removed
-	.__elf_shstrndx         1 		// Section name string table index 
+	//.__elf_ident_osabi      51
+	//.__elf_ident_abiversion 7
+	//.__elf_type             ET_EXEC
+	//.__elf_machine          EM_CUDA
+	//.__elf_version          129 		// CUDA toolkit version 
+	//.__elf_entry            0 		// entry point address 
+	//.__elf_phoff            0xa00 		// program header offset, maybe updated by assembler
+	//.__elf_shoff            0x700 		// section header offset, maybe updated by assembler
+	//.__elf_flags            0x560556 		// Flags, SM_86(0x56), COMPUTE_86(0x56) 
+	//.__elf_ehsize           64 		// elf header size 
+	//.__elf_phentsize        56 		// program entry size
+	//.__elf_phnum            3 		// number of program entries
+	//.__elf_shentsize        64 		// section entry size
+	//.__elf_shnum            12 		// number of sections, currently no sections can be appended/removed
+	//.__elf_shstrndx         1 		// Section name string table index 
 
 
   //-------------------------------------------------
@@ -642,3 +665,4 @@ class SASSRenderer(Renderer):
 
 
     """
+    return ret
