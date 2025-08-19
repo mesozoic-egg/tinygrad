@@ -4,8 +4,9 @@ from tinygrad.helpers import DEBUG, getenv, mv_address, init_c_var, init_c_struc
 from tinygrad.device import Compiled, BufferSpec, LRUAllocator
 from tinygrad.renderer.cstyle import CUDARenderer
 from tinygrad.renderer.ptx import PTXRenderer
+from tinygrad.renderer.sass import SASSRenderer
 from tinygrad.runtime.autogen import cuda
-from tinygrad.runtime.support.compiler_cuda import SASSCompiler2, pretty_ptx, CUDACompiler, PTXCompiler, PTX
+from tinygrad.runtime.support.compiler_cuda import SASSCompiler, SASSCompiler2, pretty_ptx, CUDACompiler, PTXCompiler, PTX
 if getenv("IOCTL"): import extra.nv_gpu_driver.nv_ioctl  # noqa: F401  # pylint: disable=unused-import
 if MOCKGPU:=getenv("MOCKGPU"): from test.mockgpu.cuda import cuda # type: ignore # pylint: disable=reimported
 
@@ -115,7 +116,10 @@ class CUDADevice(Compiled):
     CUDADevice.devices.append(self)
 
     from tinygrad.runtime.graph.cuda import CUDAGraph
-    if os.environ.get("SASS2"):
+    if os.environ.get("SASS"):
+      renderer = SASSRenderer(self.arch)
+      compiler = SASSCompiler(self.arch)
+    elif os.environ.get("SASS2"):
       renderer = CUDARenderer(self.arch)
       compiler = SASSCompiler2(self.arch)
     else:

@@ -90,8 +90,8 @@ class SASSCompiler(Compiler):
         f.write(src)
       parser = CuAsmParser()
       parser.parse(cuasm_file.name)
-      parser.saveAsCubin(cuasm_cubin_file.name)
-      cubin = cuasm_cubin_file.read()
+      parser.saveAsCubin(cubin_file.name)
+      cubin = cubin_file.read()
       return cubin
 
 class SASSCompiler2(Compiler):
