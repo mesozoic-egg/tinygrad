@@ -1,11 +1,12 @@
 from __future__ import annotations
-import ctypes, ctypes.util, functools
+import ctypes, ctypes.util, functools, os
 from tinygrad.helpers import DEBUG, getenv, mv_address, init_c_var, init_c_struct_t, suppress_finalizing
 from tinygrad.device import Compiled, BufferSpec, LRUAllocator
 from tinygrad.renderer.cstyle import CUDARenderer
 from tinygrad.renderer.ptx import PTXRenderer
+from tinygrad.renderer.sass import SASSRenderer
 from tinygrad.runtime.autogen import cuda
-from tinygrad.runtime.support.compiler_cuda import pretty_ptx, CUDACompiler, PTXCompiler, PTX
+from tinygrad.runtime.support.compiler_cuda import SASSCompiler, SASSCompiler2, pretty_ptx, CUDACompiler, PTXCompiler, PTX
 if getenv("IOCTL"): import extra.nv_gpu_driver.nv_ioctl  # noqa: F401  # pylint: disable=unused-import
 if MOCKGPU:=getenv("MOCKGPU"): from test.mockgpu.cuda import cuda # type: ignore # pylint: disable=reimported
 
@@ -115,8 +116,18 @@ class CUDADevice(Compiled):
     CUDADevice.devices.append(self)
 
     from tinygrad.runtime.graph.cuda import CUDAGraph
-    super().__init__(device, CUDAAllocator(self), PTXRenderer(self.arch) if PTX else CUDARenderer(self.arch),
-                     PTXCompiler(self.arch) if PTX else CUDACompiler(self.arch), functools.partial(CUDAProgram, self), None if MOCKGPU else CUDAGraph)
+    if os.environ.get("SASS"):
+      renderer = SASSRenderer(self.arch)
+      compiler = SASSCompiler(self.arch)
+    elif os.environ.get("SASS2"):
+      renderer = CUDARenderer(self.arch)
+      compiler = SASSCompiler2(self.arch)
+    else:
+      renderer = PTXRenderer(self.arch) if PTX else CUDARenderer(self.arch)
+      compiler = PTXCompiler(self.arch) if PTX else CUDACompiler(self.arch)
+
+    super().__init__(device, CUDAAllocator(self), renderer,
+                     compiler, functools.partial(CUDAProgram, self), None if MOCKGPU else CUDAGraph)
 
   def synchronize(self):
     check(cuda.cuCtxSetCurrent(self.context))
