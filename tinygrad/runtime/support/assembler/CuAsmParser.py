@@ -805,9 +805,7 @@ class CuAsmParser(object):
 
         # write section data
         for sname,sec in self.__mSectionDict.items():
-            print(f"{sname=}")
             b = sec.getData()
-            printb(b)
             disppos('SectionData %s'%sname)
             sec.writePaddedData(fout)
 

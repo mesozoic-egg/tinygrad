@@ -6,7 +6,7 @@ from tinygrad.uop.ops import Ops, UOp, PatternMatcher, UPat, GroupOp
 from tinygrad.dtype import dtypes, DType, PtrDType, AddrSpace
 from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import CUDARenderer
-from tinygrad.helpers import flatten, get_single_element, prod
+from tinygrad.helpers import flatten, get_single_element, prod, DEBUG
 
 def dict_to_str(d: Mapping[str, Union[str, int]]):
   ret = ""
@@ -34,18 +34,18 @@ class Section:
     ret.append(f".align    {self.align}")
     data = []
     for b in self.data:
-      data.append(f"{b:02x}")
+      data.append(f"0x{b:02x}")
     byte_section:list[str] = ['']
     _b = []
     for i, b in enumerate(data):
-      if i % 8 == 0:
-         _b.append(".byte")
       _b.append(b)
       if (i+1) % 8 == 0:
-        byte_section.append(" ".join(_b))
+        byte_section.append(".byte " + ", ".join(_b))
         _b.clear()
+    if len(_b): byte_section.append(".byte " + ", ".join(_b))
     ret.extend(byte_section)
     ret = "\n".join(ret)
+    if DEBUG>=6: print(ret)
     return ret
 
 
@@ -82,121 +82,45 @@ class SASSRenderer(Renderer):
       "empty": Section('', 0, 0, b'',
                  SectionHeader(0, 'SHT_NULL',  0, 0, 0   , 0,    0, 0, 0,)),
       "shstrtab": Section('.shstrtab', 0, 1,
-                  b'\x00\x2e\x73\x68\x73\x74\x72\x74\x61'
-                  b'\x62\x00 \x2e\x73\x74\x72\x74\x61\x62\x00'
-                  b'\x2e\x73\x79\x6d\x74\x61\x62\x00'
-                  b'\x2e\x73\x79\x6d\x74\x61\x62\x5f'
-                  b'\x73\x68\x6e\x64\x78\x00'
-                  b'\x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
-                  b'\x00 \x2e\x74\x65\x78\x74\x2e\x45\x5f'
-                  b'\x33\x00 \x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
-                  b'\x2e\x45\x5f\x33\x00 \x2e\x6e\x76\x2e\x73\x68\x61\x72'
-                  b'\x65\x64\x2e\x45\x5f\x33\x00'
-                  b'\x2e\x6e\x76\x2e\x63\x6f\x6e\x73'
-                  b'\x74\x61\x6e\x74\x30\x2e\x45\x5f'
-                  b'\x33\x00'
-                  b'\x2e\x72\x65\x6c\x2e\x6e\x76\x2e'
-                  b'\x63\x6f\x6e\x73\x74\x61\x6e\x74'
-                  b'\x30\x2e\x45\x5f\x33\x00'
-                  b'\x2e\x64\x65\x62\x75\x67\x5f\x66'
-                  b'\x72\x61\x6d\x65\x00'
-                  b'\x2e\x72\x65\x6c\x2e\x64\x65\x62'
-                  b'\x75\x67\x5f\x66\x72\x61\x6d\x65'
-                  b'\x00'
-                  b'\x2e\x72\x65\x6c\x61\x2e\x64\x65'
-                  b'\x62\x75\x67\x5f\x66\x72\x61\x6d'
-                  b'\x65\x00'
-                  b'\x2e\x6e\x76\x2e\x63\x61\x6c\x6c'
-                  b'\x67\x72\x61\x70\x68\x00'
-                  b'\x2e\x6e\x76\x2e\x70\x72\x6f\x74'
-                  b'\x6f\x74\x79\x70\x65\x00'
-                  b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e'
-                  b'\x61\x63\x74\x69\x6f\x6e\x00',
-                 SectionHeader(1, 'SH_STRTAB', 0, 0, 0x40, 0xdb, 0, 0, 0)),
+b'\x00'
+b'\x2e\x73\x68\x73\x74\x72\x74\x61'
+b'\x62\x00'
+b'\x2e\x73\x74\x72\x74\x61\x62\x00'
+b'\x2e\x73\x79\x6d\x74\x61\x62\x00'
+b'\x2e\x73\x79\x6d\x74\x61\x62\x5f'
+b'\x73\x68\x6e\x64\x78\x00'
+b'\x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
+b'\x00'
+b'\x2e\x74\x65\x78\x74\x2e\x45\x5f'
+b'\x33\x00'
+b'\x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
+b'\x2e\x45\x5f\x33\x00'
+b'\x2e\x6e\x76\x2e\x73\x68\x61\x72'
+b'\x65\x64\x2e\x45\x5f\x33\x00'
+b'\x2e\x6e\x76\x2e\x63\x6f\x6e\x73'
+b'\x74\x61\x6e\x74\x30\x2e\x45\x5f'
+b'\x33\x00'
+b'\x2e\x72\x65\x6c\x2e\x6e\x76\x2e'
+b'\x63\x6f\x6e\x73\x74\x61\x6e\x74'
+b'\x30\x2e\x45\x5f\x33\x00'
+b'\x2e\x64\x65\x62\x75\x67\x5f\x66'
+b'\x72\x61\x6d\x65\x00'
+b'\x2e\x72\x65\x6c\x2e\x64\x65\x62'
+b'\x75\x67\x5f\x66\x72\x61\x6d\x65'
+b'\x00'
+b'\x2e\x72\x65\x6c\x61\x2e\x64\x65'
+b'\x62\x75\x67\x5f\x66\x72\x61\x6d'
+b'\x65\x00'
+b'\x2e\x6e\x76\x2e\x63\x61\x6c\x6c'
+b'\x67\x72\x61\x70\x68\x00'
+b'\x2e\x6e\x76\x2e\x70\x72\x6f\x74'
+b'\x6f\x74\x79\x70\x65\x00'
+b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00',
+                 SectionHeader(1, 'SHT_STRTAB', 0, 0, 0x40, 0xdb, 0, 0, 0)),
     }
     ret += sections['empty'].to_asm()
-    #ret += sections['shstrtab'].to_asm()
+    ret += sections['shstrtab'].to_asm()
     ret += """
-	.section  ".shstrtab", 0, SHT_STRTAB
-	// all strings in .shstrtab section will be kept as is.
-	.__section_name         0x1 	// offset in .shstrtab
-	.__section_type         SHT_STRTAB
-	.__section_flags        0x0
-	.__section_addr         0x0
-	.__section_offset       0x40 	// maybe updated by assembler
-	.__section_size         0xdb 	// maybe updated by assembler
-	.__section_link         0
-	.__section_info         0x0
-	.__section_entsize      0
-	.align                1 	// equivalent to set sh_addralign
-    // .shstrtab[0] = b'\x00' 
-    /*0000*/ .byte 0x00
-
-    // .shstrtab[1] = b'.shstrtab\x00' 
-    /*0001*/ .byte 0x2e, 0x73, 0x68, 0x73, 0x74, 0x72, 0x74, 0x61
-    /*0009*/ .byte 0x62, 0x00
-
-    // .shstrtab[2] = b'.strtab\x00' 
-    /*000b*/ .byte 0x2e, 0x73, 0x74, 0x72, 0x74, 0x61, 0x62, 0x00
-
-    // .shstrtab[3] = b'.symtab\x00' 
-    /*0013*/ .byte 0x2e, 0x73, 0x79, 0x6d, 0x74, 0x61, 0x62, 0x00
-
-    // .shstrtab[4] = b'.symtab_shndx\x00' 
-    /*001b*/ .byte 0x2e, 0x73, 0x79, 0x6d, 0x74, 0x61, 0x62, 0x5f
-    /*0023*/ .byte 0x73, 0x68, 0x6e, 0x64, 0x78, 0x00
-
-    // .shstrtab[5] = b'.nv.info\x00' 
-    /*0029*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x69, 0x6e, 0x66, 0x6f
-    /*0031*/ .byte 0x00
-
-    // .shstrtab[6] = b'.text.E_3\x00' 
-    /*0032*/ .byte 0x2e, 0x74, 0x65, 0x78, 0x74, 0x2e, 0x45, 0x5f
-    /*003a*/ .byte 0x33, 0x00
-
-    // .shstrtab[7] = b'.nv.info.E_3\x00' 
-    /*003c*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x69, 0x6e, 0x66, 0x6f
-    /*0044*/ .byte 0x2e, 0x45, 0x5f, 0x33, 0x00
-
-    // .shstrtab[8] = b'.nv.shared.E_3\x00' 
-    /*0049*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x73, 0x68, 0x61, 0x72
-    /*0051*/ .byte 0x65, 0x64, 0x2e, 0x45, 0x5f, 0x33, 0x00
-
-    // .shstrtab[9] = b'.nv.constant0.E_3\x00' 
-    /*0058*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x63, 0x6f, 0x6e, 0x73
-    /*0060*/ .byte 0x74, 0x61, 0x6e, 0x74, 0x30, 0x2e, 0x45, 0x5f
-    /*0068*/ .byte 0x33, 0x00
-
-    // .shstrtab[10] = b'.rel.nv.constant0.E_3\x00' 
-    /*006a*/ .byte 0x2e, 0x72, 0x65, 0x6c, 0x2e, 0x6e, 0x76, 0x2e
-    /*0072*/ .byte 0x63, 0x6f, 0x6e, 0x73, 0x74, 0x61, 0x6e, 0x74
-    /*007a*/ .byte 0x30, 0x2e, 0x45, 0x5f, 0x33, 0x00
-
-    // .shstrtab[11] = b'.debug_frame\x00' 
-    /*0080*/ .byte 0x2e, 0x64, 0x65, 0x62, 0x75, 0x67, 0x5f, 0x66
-    /*0088*/ .byte 0x72, 0x61, 0x6d, 0x65, 0x00
-
-    // .shstrtab[12] = b'.rel.debug_frame\x00' 
-    /*008d*/ .byte 0x2e, 0x72, 0x65, 0x6c, 0x2e, 0x64, 0x65, 0x62
-    /*0095*/ .byte 0x75, 0x67, 0x5f, 0x66, 0x72, 0x61, 0x6d, 0x65
-    /*009d*/ .byte 0x00
-
-    // .shstrtab[13] = b'.rela.debug_frame\x00' 
-    /*009e*/ .byte 0x2e, 0x72, 0x65, 0x6c, 0x61, 0x2e, 0x64, 0x65
-    /*00a6*/ .byte 0x62, 0x75, 0x67, 0x5f, 0x66, 0x72, 0x61, 0x6d
-    /*00ae*/ .byte 0x65, 0x00
-
-    // .shstrtab[14] = b'.nv.callgraph\x00' 
-    /*00b0*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x63, 0x61, 0x6c, 0x6c
-    /*00b8*/ .byte 0x67, 0x72, 0x61, 0x70, 0x68, 0x00
-
-    // .shstrtab[15] = b'.nv.prototype\x00' 
-    /*00be*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x70, 0x72, 0x6f, 0x74
-    /*00c6*/ .byte 0x6f, 0x74, 0x79, 0x70, 0x65, 0x00
-
-    // .shstrtab[16] = b'.nv.rel.action\x00' 
-    /*00cc*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x72, 0x65, 0x6c, 0x2e
-    /*00d4*/ .byte 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x00
 
 	.section  ".strtab", 0, SHT_STRTAB
 	.__section_name         0xb 	// offset in .shstrtab
