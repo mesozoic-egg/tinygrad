@@ -22,8 +22,9 @@ class SectionHeader:
 
 @dataclasses.dataclass
 class Section:
-  name_str: str; num: int; align: int; data: bytes
+  name_str: str; num: int; align: int;
   header: SectionHeader
+  data: bytes
   def to_asm(self, output_data: bool=True):
     ret = [f".section \"{self.name_str}\", {self.num}, {self.header._type}"]
     for k, v in dataclasses.asdict(self.header).items():
@@ -79,9 +80,8 @@ class SASSRenderer(Renderer):
     ret = ""
     ret += dict_to_str(elf_header)
     sections = {
-      "empty": Section('', 0, 0, b'',
-                 SectionHeader(0, 'SHT_NULL',  0, 0, 0   , 0,    0, 0, 0,)),
-      "shstrtab": Section('.shstrtab', 0, 1,
+      "empty": Section('', 0, 0, SectionHeader(0, 'SHT_NULL',  0, 0, 0, 0, 0, 0, 0,), b''),
+      "shstrtab": Section('.shstrtab', 0, 1, SectionHeader(1, 'SHT_STRTAB', 0, 0, 0x40, 0xdb, 0, 0, 0),
 b'\x00'
 b'\x2e\x73\x68\x73\x74\x72\x74\x61'
 b'\x62\x00'
@@ -115,8 +115,9 @@ b'\x2e\x6e\x76\x2e\x63\x61\x6c\x6c'
 b'\x67\x72\x61\x70\x68\x00'
 b'\x2e\x6e\x76\x2e\x70\x72\x6f\x74'
 b'\x6f\x74\x79\x70\x65\x00'
-b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00',
-                 SectionHeader(1, 'SHT_STRTAB', 0, 0, 0x40, 0xdb, 0, 0, 0)),
+b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00'),
+      "strtab": Section('.strtab', 0, 1, SectionHeader(0xb, "SHT_STRTAB", 0, 0, 0x11b, 0xdf, 0, 0, 0),
+                      b''),
     }
     ret += sections['empty'].to_asm()
     ret += sections['shstrtab'].to_asm()
