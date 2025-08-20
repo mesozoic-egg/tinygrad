@@ -15,13 +15,25 @@ def dict_to_str(d: Mapping[str, Union[str, int]]):
   return ret
 
 @dataclasses.dataclass
-class Section:
-  name_str: str; num: int; align: int; 
+class SectionHeader:
   name: int; _type: str;
   flags: int; addr: int; offset: int; size: int; link: int; info: int;
-  entsize: int; data: bytes
+  entsize: int;
+
+@dataclasses.dataclass
+class Section:
+  name_str: str; num: int; align: int; data: bytes
+  header: SectionHeader
   def to_asm(self):
-    ret = f".section \"{self.name_str}\", {self.num}, {self._type}"
+    ret = [f".section \"{self.name_str}\", {self.num}, {self.header._type}"]
+    for k, v in dataclasses.asdict(self.header).items():
+      if k == "_type": k = "type"
+      if type(v) == int:
+        v = f"{v:#x}"
+      ret.append(f".__section_{k}    {v}")
+    ret.append(f".align    {self.align}")
+    ret = "\n".join(ret)
+    return ret
 
 
   
@@ -54,20 +66,10 @@ class SASSRenderer(Renderer):
     ret = ""
     ret += dict_to_str(elf_header)
     sections = {
-      ".shstrtab": Section('', 0, 0, 0, 'SHT_NULL', 0, 0, 0, 0, 0, 0, 0, b'',)
+      "empty": Section('', 0, 0, b'', SectionHeader(0, 'SHT_NULL', 0, 0, 0, 0, 0, 0, 0,))
     }
+    ret += sections['empty'].to_asm()
     ret += """
-	.section  "", 0, SHT_NULL
-	.__section_name         0x0 	// offset in .shstrtab
-	.__section_type         SHT_NULL
-	.__section_flags        0x0
-	.__section_addr         0x0
-	.__section_offset       0x0 	// maybe updated by assembler
-	.__section_size         0x0 	// maybe updated by assembler
-	.__section_link         0
-	.__section_info         0x0
-	.__section_entsize      0
-	.align                0 	// equivalent to set sh_addralign
 
 // --------------------- .shstrtab                        --------------------------
 	.section  ".shstrtab", 0, SHT_STRTAB
