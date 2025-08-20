@@ -154,61 +154,35 @@ b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e'
 b'\x61\x63\x74\x69\x6f\x6e\x00'
 b'\x45\x5f\x33\x00'
                         ),
+      "symtab": Section(".symtab", 0, 8, SectionHeader(0x13, "SHT_SYMTAB", 0, 0, 0x200, 0xa8, 2, 0x6, 24),
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x32\x00\x00\x00\x03\x00\x0b\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x6e\x00\x00\x00\x03\x00\x0a\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x80\x00\x00\x00\x03\x00\x04\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\xb0\x00\x00\x00\x03\x00\x07\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\xcc\x00\x00\x00\x03\x00\x08\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\xdb\x00\x00\x00\x12\x10\x0b\x00'
+     b'\x00\x00\x00\x00\x00\x00\x00\x00'
+     b'\x80\x01\x00\x00\x00\x00\x00\x00'
+                        )
     }
     ret += sections['empty'].to_asm()
     ret += sections['shstrtab'].to_asm()
     ret += sections['strtab'].to_asm()
+    ret += sections['symtab'].to_asm(True)
     ret += """
-
-// --------------------- .symtab                          --------------------------
-	.section  ".symtab", 0, SHT_SYMTAB
-	// all symbols in .symtab sections will be kept
-	// but the symbol size may be changed accordingly
-	.__section_name         0x13 	// offset in .shstrtab
-	.__section_type         SHT_SYMTAB
-	.__section_flags        0x0
-	.__section_addr         0x0
-	.__section_offset       0x200 	// maybe updated by assembler
-	.__section_size         0xa8 	// maybe updated by assembler
-	.__section_link         2
-	.__section_info         0x6
-	.__section_entsize      24
-	.align                8 	// equivalent to set sh_addralign
-    // Symbol[0] "": Container({'st_name': 0, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_NOTYPE'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 'SHN_UNDEF', 'st_value': 0, 'st_size': 0})
-    /*0000*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0008*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0010*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[1] ".text.E_3": Container({'st_name': 50, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_SECTION'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 11, 'st_value': 0, 'st_size': 0})
-    /*0018*/ .byte 0x32, 0x00, 0x00, 0x00, 0x03, 0x00, 0x0b, 0x00
-    /*0020*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0028*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[2] ".nv.constant0.E_3": Container({'st_name': 110, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_SECTION'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 10, 'st_value': 0, 'st_size': 0})
-    /*0030*/ .byte 0x6e, 0x00, 0x00, 0x00, 0x03, 0x00, 0x0a, 0x00
-    /*0038*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0040*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[3] ".debug_frame": Container({'st_name': 128, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_SECTION'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 4, 'st_value': 0, 'st_size': 0})
-    /*0048*/ .byte 0x80, 0x00, 0x00, 0x00, 0x03, 0x00, 0x04, 0x00
-    /*0050*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0058*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[4] ".nv.callgraph": Container({'st_name': 176, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_SECTION'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 7, 'st_value': 0, 'st_size': 0})
-    /*0060*/ .byte 0xb0, 0x00, 0x00, 0x00, 0x03, 0x00, 0x07, 0x00
-    /*0068*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0070*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[5] ".nv.rel.action": Container({'st_name': 204, 'st_info': Container({'bind': 'STB_LOCAL', 'type': 'STT_SECTION'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 8, 'st_value': 0, 'st_size': 0})
-    /*0078*/ .byte 0xcc, 0x00, 0x00, 0x00, 0x03, 0x00, 0x08, 0x00
-    /*0080*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*0088*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
-    // Symbol[6] "E_3": Container({'st_name': 219, 'st_info': Container({'bind': 'STB_GLOBAL', 'type': 'STT_FUNC'}), 'st_other': Container({'local': 0, 'visibility': 'STV_DEFAULT'}), 'st_shndx': 11, 'st_value': 0, 'st_size': 384})
-    /*0090*/ .byte 0xdb, 0x00, 0x00, 0x00, 0x12, 0x10, 0x0b, 0x00
-    /*0098*/ .byte 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-    /*00a0*/ .byte 0x80, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
-
 
 // --------------------- .debug_frame                     --------------------------
 	.section	.debug_frame,"",@progbits
