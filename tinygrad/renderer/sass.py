@@ -32,6 +32,19 @@ class Section:
         v = f"{v:#x}"
       ret.append(f".__section_{k}    {v}")
     ret.append(f".align    {self.align}")
+    data = []
+    for b in self.data:
+      data.append(f"{b:02x}")
+    byte_section:list[str] = ['']
+    _b = []
+    for i, b in enumerate(data):
+      if i % 8 == 0:
+         _b.append(".byte")
+      _b.append(b)
+      if (i+1) % 8 == 0:
+        byte_section.append(" ".join(_b))
+        _b.clear()
+    ret.extend(byte_section)
     ret = "\n".join(ret)
     return ret
 
@@ -66,12 +79,44 @@ class SASSRenderer(Renderer):
     ret = ""
     ret += dict_to_str(elf_header)
     sections = {
-      "empty": Section('', 0, 0, b'', SectionHeader(0, 'SHT_NULL', 0, 0, 0, 0, 0, 0, 0,))
+      "empty": Section('', 0, 0, b'',
+                 SectionHeader(0, 'SHT_NULL',  0, 0, 0   , 0,    0, 0, 0,)),
+      "shstrtab": Section('.shstrtab', 0, 1,
+                  b'\x00\x2e\x73\x68\x73\x74\x72\x74\x61'
+                  b'\x62\x00 \x2e\x73\x74\x72\x74\x61\x62\x00'
+                  b'\x2e\x73\x79\x6d\x74\x61\x62\x00'
+                  b'\x2e\x73\x79\x6d\x74\x61\x62\x5f'
+                  b'\x73\x68\x6e\x64\x78\x00'
+                  b'\x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
+                  b'\x00 \x2e\x74\x65\x78\x74\x2e\x45\x5f'
+                  b'\x33\x00 \x2e\x6e\x76\x2e\x69\x6e\x66\x6f'
+                  b'\x2e\x45\x5f\x33\x00 \x2e\x6e\x76\x2e\x73\x68\x61\x72'
+                  b'\x65\x64\x2e\x45\x5f\x33\x00'
+                  b'\x2e\x6e\x76\x2e\x63\x6f\x6e\x73'
+                  b'\x74\x61\x6e\x74\x30\x2e\x45\x5f'
+                  b'\x33\x00'
+                  b'\x2e\x72\x65\x6c\x2e\x6e\x76\x2e'
+                  b'\x63\x6f\x6e\x73\x74\x61\x6e\x74'
+                  b'\x30\x2e\x45\x5f\x33\x00'
+                  b'\x2e\x64\x65\x62\x75\x67\x5f\x66'
+                  b'\x72\x61\x6d\x65\x00'
+                  b'\x2e\x72\x65\x6c\x2e\x64\x65\x62'
+                  b'\x75\x67\x5f\x66\x72\x61\x6d\x65'
+                  b'\x00'
+                  b'\x2e\x72\x65\x6c\x61\x2e\x64\x65'
+                  b'\x62\x75\x67\x5f\x66\x72\x61\x6d'
+                  b'\x65\x00'
+                  b'\x2e\x6e\x76\x2e\x63\x61\x6c\x6c'
+                  b'\x67\x72\x61\x70\x68\x00'
+                  b'\x2e\x6e\x76\x2e\x70\x72\x6f\x74'
+                  b'\x6f\x74\x79\x70\x65\x00'
+                  b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e'
+                  b'\x61\x63\x74\x69\x6f\x6e\x00',
+                 SectionHeader(1, 'SH_STRTAB', 0, 0, 0x40, 0xdb, 0, 0, 0)),
     }
     ret += sections['empty'].to_asm()
+    #ret += sections['shstrtab'].to_asm()
     ret += """
-
-// --------------------- .shstrtab                        --------------------------
 	.section  ".shstrtab", 0, SHT_STRTAB
 	// all strings in .shstrtab section will be kept as is.
 	.__section_name         0x1 	// offset in .shstrtab
@@ -152,7 +197,6 @@ class SASSRenderer(Renderer):
     // .shstrtab[16] = b'.nv.rel.action\x00' 
     /*00cc*/ .byte 0x2e, 0x6e, 0x76, 0x2e, 0x72, 0x65, 0x6c, 0x2e
     /*00d4*/ .byte 0x61, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x00
-
 
 	.section  ".strtab", 0, SHT_STRTAB
 	.__section_name         0xb 	// offset in .shstrtab
