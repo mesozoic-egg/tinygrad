@@ -24,7 +24,7 @@ class SectionHeader:
 class Section:
   name_str: str; num: int; align: int; data: bytes
   header: SectionHeader
-  def to_asm(self):
+  def to_asm(self, output_data: bool=True):
     ret = [f".section \"{self.name_str}\", {self.num}, {self.header._type}"]
     for k, v in dataclasses.asdict(self.header).items():
       if k == "_type": k = "type"
@@ -43,7 +43,7 @@ class Section:
         byte_section.append(".byte " + ", ".join(_b))
         _b.clear()
     if len(_b): byte_section.append(".byte " + ", ".join(_b))
-    ret.extend(byte_section)
+    if output_data: ret.extend(byte_section)
     ret = "\n".join(ret)
     if DEBUG>=6: print(ret)
     return ret
@@ -120,8 +120,7 @@ b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00',
     }
     ret += sections['empty'].to_asm()
     ret += sections['shstrtab'].to_asm()
-    ret += """
-
+    strtab_header = """
 	.section  ".strtab", 0, SHT_STRTAB
 	.__section_name         0xb 	// offset in .shstrtab
 	.__section_type         SHT_STRTAB
@@ -133,6 +132,8 @@ b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00',
 	.__section_info         0x0
 	.__section_entsize      0
 	.align                1 	// equivalent to set sh_addralign
+    """
+    strtab_data = """
     // .strtab[0] = b'\x00' 
     /*0000*/ .byte 0x00
 
@@ -205,6 +206,10 @@ b'\x2e\x6e\x76\x2e\x72\x65\x6c\x2e\x61\x63\x74\x69\x6f\x6e\x00',
     // .strtab[17] = b'E_3\x00' 
     /*00db*/ .byte 0x45, 0x5f, 0x33, 0x00
 
+    """
+    ret += strtab_header
+    ret += strtab_data
+    ret += """
 
 // --------------------- .symtab                          --------------------------
 	.section  ".symtab", 0, SHT_SYMTAB
