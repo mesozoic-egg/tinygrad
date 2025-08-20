@@ -176,26 +176,31 @@ b'\x45\x5f\x33\x00'
      b'\xdb\x00\x00\x00\x12\x10\x0b\x00'
      b'\x00\x00\x00\x00\x00\x00\x00\x00'
      b'\x80\x01\x00\x00\x00\x00\x00\x00'
-                        )
+                        ),
+      "debug_frame": Section(".debug_frame", 0, 1,
+                             SectionHeader(0x80, "SHT_PROGBITS", 0, 0, 0x2a8, 0x70,0, 0, 0),
+b''
+                             ),
     }
     ret += sections['empty'].to_asm()
     ret += sections['shstrtab'].to_asm()
     ret += sections['strtab'].to_asm()
-    ret += sections['symtab'].to_asm(True)
+    ret += sections['symtab'].to_asm()
+    ret += sections['debug_frame'].to_asm(False)
     ret += """
 
 // --------------------- .debug_frame                     --------------------------
-	.section	.debug_frame,"",@progbits
-	.__section_name         0x80 	// offset in .shstrtab
-	.__section_type         SHT_PROGBITS
-	.__section_flags        0x0
-	.__section_addr         0x0
-	.__section_offset       0x2a8 	// maybe updated by assembler
-	.__section_size         0x70 	// maybe updated by assembler
-	.__section_link         0
-	.__section_info         0x0
-	.__section_entsize      0
-	.align                1 	// equivalent to set sh_addralign
+	//.section	.debug_frame,"",@progbits
+	//.__section_name         0x80 	// offset in .shstrtab
+	//.__section_type         SHT_PROGBITS
+	//.__section_flags        0x0
+	//.__section_addr         0x0
+	//.__section_offset       0x2a8 	// maybe updated by assembler
+	//.__section_size         0x70 	// maybe updated by assembler
+	//.__section_link         0
+	//.__section_info         0x0
+	//.__section_entsize      0
+	//.align                1 	// equivalent to set sh_addralign
   .debug_frame:
           /*0000*/ 	.byte	0xff, 0xff, 0xff, 0xff, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff
           /*0010*/ 	.byte	0xff, 0xff, 0xff, 0xff, 0x03, 0x00, 0x04, 0x7c, 0xff, 0xff, 0xff, 0xff, 0x0f, 0x0c, 0x81, 0x80
