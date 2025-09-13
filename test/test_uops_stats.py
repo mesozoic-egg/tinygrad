@@ -1,13 +1,14 @@
 import unittest
 from tinygrad import Tensor
-from tinygrad.helpers import getenv, GlobalCounters
+from tinygrad.helpers import getenv, GlobalCounters, EMULATE
 from tinygrad.engine.realize import lower_schedule_item, ProgramSpec, get_program
 from tinygrad.renderer import Estimates
 from tinygrad.codegen import full_rewrite
 from tinygrad.uop.ops import Ops, UOp
 from tinygrad.dtype import dtypes
-from tinygrad.codegen.opt.kernel import Opt, OptOps, KernelOptError
+from tinygrad.codegen.opt import Opt, OptOps, KernelOptError
 from tinygrad.device import Device
+from tinygrad.renderer.ptx import PTXRenderer
 
 def flops_mem(uops, ignore_indexing=False):
   est = Estimates.from_uops(uops, ignore_indexing)
@@ -20,6 +21,7 @@ def get_stats(x:Tensor):
   ei = lower_schedule_item(si)
   return ei.prg.estimates.ops, ei.prg.estimates.mem
 
+@unittest.skipIf(Device.DEFAULT == "WEBGPU", "webgpu does extra load/store for packed types")
 class TestMemoryCount(unittest.TestCase):
   def test_add(self):
     a = Tensor.empty(1024, 1024, dtype=dtypes.uint8)
@@ -86,6 +88,7 @@ class TestUOpsStatsMatmulHalf(unittest.TestCase):
     expected_ops = N ** 3 * 2
     self.assertEqual(expected_ops, GlobalCounters.global_ops)
 
+  @unittest.skipIf(EMULATE.value=="INTEL", "intel gets 524288 != 524352")
   def test_bigger_matmul_half(self): self.test_simple_matmul_half(64)
 
   def test_batched_matmul_half(self, N=16):
@@ -97,7 +100,6 @@ class TestUOpsStatsMatmulHalf(unittest.TestCase):
     self.assertEqual(expected_ops, GlobalCounters.global_ops)
 
 class TestUOpsStats(unittest.TestCase):
-  @unittest.skipIf(getenv("PTX"), "wrong in PTX")
   def test_simple_add(self):
     a = Tensor.empty(100,100)
     b = Tensor.empty(100,100)
@@ -109,7 +111,6 @@ class TestUOpsStats(unittest.TestCase):
     # NOTE; ops also include indexing ops
     assert expected_ops <= ops and ops <= expected_ops * 2
 
-  @unittest.skipIf(getenv("PTX"), "wrong in PTX")
   def test_simple_add_sq(self):
     a = Tensor.empty(100,100)
     b = Tensor.empty(100,100)
@@ -158,7 +159,7 @@ class TestUOpsStats(unittest.TestCase):
     self.assertEqual(flops_mem(uops), flops_mem(uops_fma))
 
 N = 64
-@unittest.skipIf(getenv("PTX"), "wrong in PTX") # maybe?
+@unittest.skipIf(isinstance(Device[Device.DEFAULT].renderer, PTXRenderer), "wrong in PTX") # maybe?
 class TestStatsOptimized(unittest.TestCase):
   @classmethod
   def setUpClass(cls):

@@ -8,7 +8,7 @@ from tinygrad.runtime.support.assembler.CubinFile import CubinFile
 from tinygrad.runtime.support.assembler.CuAsmParser import CuAsmParser
 
 
-PTX, CUDA_PATH = getenv("PTX"), getenv("CUDA_PATH", "")  # PTX shouldn't be here, in fact, it shouldn't exist
+CUDA_PATH = getenv("CUDA_PATH", "")  # PTX shouldn't be here, in fact, it shouldn't exist
 
 def _get_bytes(arg, get_str, get_sz, check) -> bytes:
   sz = init_c_var(ctypes.c_size_t(), lambda x: check(get_sz(arg, ctypes.byref(x))))
