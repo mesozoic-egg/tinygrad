@@ -116,24 +116,9 @@ class CUDADevice(Compiled):
     CUDADevice.devices.append(self)
 
     from tinygrad.runtime.graph.cuda import CUDAGraph
-<<<<<<< HEAD
-    if os.environ.get("SASS"):
-      renderer = SASSRenderer(self.arch)
-      compiler = SASSCompiler(self.arch)
-    elif os.environ.get("SASS2"):
-      renderer = CUDARenderer(self.arch)
-      compiler = SASSCompiler2(self.arch)
-    else:
-      renderer = PTXRenderer(self.arch) if PTX else CUDARenderer(self.arch)
-      compiler = PTXCompiler(self.arch) if PTX else CUDACompiler(self.arch)
-
-    super().__init__(device, CUDAAllocator(self), renderer,
-                     compiler, functools.partial(CUDAProgram, self), None if MOCKGPU else CUDAGraph)
-=======
     compilers:list[CompilerPairT] = [(functools.partial(CUDARenderer, self.arch), functools.partial(CUDACompiler, self.arch)),
                                      (functools.partial(PTXRenderer, self.arch), functools.partial(PTXCompiler, self.arch))]
     super().__init__(device, CUDAAllocator(self), compilers, functools.partial(CUDAProgram, self), None if MOCKGPU else CUDAGraph)
->>>>>>> master
 
   def synchronize(self):
     check(cuda.cuCtxSetCurrent(self.context))
