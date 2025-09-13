@@ -94,7 +94,7 @@ class SASSCompiler(Compiler):
       cubin = cubin_file.read()
       return cubin
 
-class SASSCompiler2(Compiler):
+class SASS_CUASMCompiler(Compiler):
   def __init__(self, arch:str, cache_key="sass2"):
     self.arch = arch
     super().__init__(f"compile_{cache_key}_{self.arch}")
