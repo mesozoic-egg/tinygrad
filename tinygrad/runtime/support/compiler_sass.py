@@ -755,7 +755,7 @@ class SASSCompiler(Compiler):
                         cbank=0x1f, param_space='cbank')
       ],
       exit_instr_offset=0xb0,
-      threadDim=(3,1,1),
+      threadDim=(1,1,1),
 
       # elf dump section header 10 'sh_size'
       constants_section_size=0x178,

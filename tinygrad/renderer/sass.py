@@ -8,6 +8,29 @@ from tinygrad.renderer import Renderer
 from tinygrad.renderer.cstyle import CUDARenderer
 from tinygrad.helpers import flatten, get_single_element, prod, DEBUG
 
+def oneline_uop(u: UOp): return repr(u).split('\n')[0]
+
+rewriter = PatternMatcher([
+  (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda x: [f""]),
+  (UPat(Ops.SPECIAL, name='x'), lambda x: [
+    f"[B------:R-:W-:-:S01]   S2R R6, SR_TID.X ;"
+  ]),
+  (UPat(Ops.CONST, name='x'), lambda x: [f""]),
+  (UPat(Ops.INDEX, name='x'), lambda x: [
+    f"[B------:R-:W-:-:S01] IMAD.WIDE R10, R6, R7, c[0x0][0x160];"
+  ]),
+  (UPat(Ops.LOAD, name='x'), lambda x: [
+    f"[B------:R-:W0:-:S05] LDG.E R2, desc[UR4][R2.64];"
+  ]),
+  (UPat(Ops.MUL, name='x'), lambda x: [
+    f"[B0-----:R-:W-:-:S04] FMUL R9, R2, R5;"
+  ]),
+  (UPat(Ops.STORE, name='x'), lambda x: [
+    f"[B------:R-:W-:-:S01] STG.E desc[UR4][R10.64], R9;"
+  ]),
+  (UPat(Ops.SINK, name='x'), lambda x: [f""]),
+])
+
 class SASSRenderer(Renderer):
   device = "CUDA"
   suffix = "SASS"
@@ -17,7 +40,29 @@ class SASSRenderer(Renderer):
     self.device, self.arch = device, arch
 
   def render(self, uops:list[UOp]) -> str:
-    text = """
+    k: list[str] = []
+    for u in uops:
+      print(u)
+
+    for u in uops:
+      if (l:=rewriter.rewrite(u, ctx=self)) is None:
+        raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
+      l = cast(list[str], l)
+      k.extend(l)
+      pass
+    kernel: list[str] = []
+    kernel = [
+      "[B------:R-:W-:Y:S01]   ULDC.64 UR4, c[0x0][0x118] ;",
+      *k,
+      "[B------:R-:W-:-:S05]   EXIT ;",
+    ]
+
+    text = "\n".join(kernel)
+    return text
+
+
+
+text = """
   E_3:
   .text.E_3:
 // Load the 64-bit descriptor that defines HOW to access global memory
@@ -47,6 +92,15 @@ class SASSRenderer(Renderer):
 // 3. Store the result back to memory
       [B------:R-:W-:-:S01]   STG.E desc[UR4][R10.64], R9 ;
 
-      [B------:R-:W-:-:S05]   EXIT ;
+   )   [B------:R-:W-:-:S05]   EXIT ;
   """
-    return text
+"""
+extern "C" __global__ void __launch_bounds__(3) E_3(float* data0_3, float* data1_3, float* data2_3) {
+  int lidx0 = threadIdx.x; /* 3 */
+  float val0 = (*(data1_3+lidx0));
+  float val1 = (*(data2_3+lidx0));
+  *(data0_3+lidx0) = (val0*val1);
+}
+"""
+
+
