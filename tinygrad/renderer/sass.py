@@ -35,19 +35,17 @@ class FReg(RegBase): pass
 
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
-  regs = ctx.r.assign_multiple([src0, src1, x], IReg)
-  src0_reg, src1_reg, reg = regs
-  assert src0_reg != src1_reg and src0_reg != reg and src1_reg != reg
-  src0_str = src0_reg.render32()
+  regs = ctx.r.assign_multiple([src1, x], IReg)
+  src1_reg, reg = regs
   src1_str = src1_reg.render32()
   reg_str = reg.render32()
   cbank = 0x160 + src0.arg * 8
-  return [ f"IMAD.WIDE {reg_str}, {src0_str}, {src1_str} c[0x0][{cbank:#x}]" ]
+  return [ f"[B------:R-:W-:-:S01] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}]" ]
 
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
   (UPat(Ops.SPECIAL, name='x'), lambda ctx, x: [
-    f"[B------:R-:W-:-:S01]   S2R R6, SR_TID.X ;"
+    f"[B------:R-:W-:-:S01]   S2R {ctx.r.assign_i32(x)}, SR_TID.X ;"
   ]),
   (UPat(Ops.CONST, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {x.arg:#x} ;"]),
@@ -210,7 +208,7 @@ class Allocator:
     }
     self.uops: dict[UOp, Variable] = {}
     self.reserved: dict[RegBase, int] = {}
-    self.blocked: list[RegBase] = [IReg(4)]
+    self.blocked: list[RegBase] = [IReg(0)]
     self.stack_size = 0
     self.cur_step = 0
     self.kernel: list[str] = []
@@ -403,7 +401,8 @@ class Allocator:
     return vars
 
 extra_matcher = PatternMatcher([
-  (UPat(), lambda x:x),
+  #(UPat(Ops.INDEX, name='x', src=(UPat(), UPat())), lambda x: x.replace(src=(*x.src, UOp(Ops.CONST, dtype=dtypes.int, arg=4)))),
+  #(UPat(Ops.SPECIAL, ),
 ])
 
 class SASSRenderer(Renderer):
@@ -446,13 +445,13 @@ class SASSRenderer(Renderer):
 
     kernel = [
       "[B------:R-:W-:Y:S01]   ULDC.64 UR4, c[0x0][0x118] ;",
+      "[B------:R-:W-:-:S01]   MOV R0, 0x4 ;",
       *lines,
       "[B------:R-:W-:-:S05]   EXIT ;",
     ]
 
     text = "\n".join(kernel)
-    print(text)
-    raise Exception()
+    #raise Exception()
     return text
 
 
