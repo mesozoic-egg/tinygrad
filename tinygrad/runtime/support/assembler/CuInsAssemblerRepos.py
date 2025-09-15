@@ -152,7 +152,7 @@ class CuInsAssemblerRepos():
         if precheck:
             brief, info = insAsm.canAssemble(ins_vals, ins_modi)
             if brief is not None:
-                msg = 'Assembling failed (%s): %s'%(brief, info)
+                msg = f'Assembling "{s}" failed ({brief}): {info}'
                 if showCandidates:
                     msg += '\n    Known Records:\n'
                     for _, _, asm in insAsm.iterRecords():

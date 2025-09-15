@@ -1,6 +1,6 @@
 from typing import cast, Callable, Union, Mapping, Optional, List
 import struct, dataclasses
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from tinygrad.codegen.opt import tc
 from tinygrad.uop.ops import Ops, UOp, PatternMatcher, UPat, GroupOp
 from tinygrad.dtype import dtypes, DType, PtrDType, AddrSpace
@@ -33,25 +33,35 @@ class RegBase(metaclass=RegMeta):
 class IReg(RegBase): pass
 class FReg(RegBase): pass
 
+def _index(ctx, x):
+  src0, src1 = x.src[0], x.src[1]
+  regs = ctx.r.assign_multiple([src0, src1, x], IReg)
+  src0_reg, src1_reg, reg = regs
+  assert src0_reg != src1_reg and src0_reg != reg and src1_reg != reg
+  src0_str = src0_reg.render32()
+  src1_str = src1_reg.render32()
+  reg_str = reg.render32()
+  cbank = 0x160 + src0.arg * 8
+  return [ f"IMAD.WIDE {reg_str}, {src0_str}, {src1_str} c[0x0][{cbank:#x}]" ]
+
 rewriter = PatternMatcher([
-  (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda x: [f""]),
-  (UPat(Ops.SPECIAL, name='x'), lambda x: [
+  (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
+  (UPat(Ops.SPECIAL, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01]   S2R R6, SR_TID.X ;"
   ]),
-  (UPat(Ops.CONST, name='x'), lambda x: [f""]),
-  (UPat(Ops.INDEX, name='x'), lambda x: [
-    f"[B------:R-:W-:-:S01] IMAD.WIDE R10, R6, R7, c[0x0][0x160];"
+  (UPat(Ops.CONST, name='x'), lambda ctx, x: [
+    f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {x.arg:#x} ;"]),
+  (UPat(Ops.INDEX, name='x'), _index),
+  (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
+    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][R2.64];"
   ]),
-  (UPat(Ops.LOAD, name='x'), lambda x: [
-    f"[B------:R-:W0:-:S05] LDG.E R2, desc[UR4][R2.64];"
+  (UPat(Ops.MUL, name='x'), lambda ctx, x: [
+    f"[B0-----:R-:W-:-:S04] FMUL {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"
   ]),
-  (UPat(Ops.MUL, name='x'), lambda x: [
-    f"[B0-----:R-:W-:-:S04] FMUL R9, R2, R5;"
+  (UPat(Ops.STORE, name='x'), lambda ctx, x: [
+    f"[B------:R-:W-:-:S01] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
   ]),
-  (UPat(Ops.STORE, name='x'), lambda x: [
-    f"[B------:R-:W-:-:S01] STG.E desc[UR4][R10.64], R9;"
-  ]),
-  (UPat(Ops.SINK, name='x'), lambda x: [f""]),
+  (UPat(Ops.SINK, name='x'), lambda ctx, x: [f""]),
 ])
 
 class Variable:
@@ -392,34 +402,57 @@ class Allocator:
       if v.reg == reg: vars.append(v)
     return vars
 
+extra_matcher = PatternMatcher([
+  (UPat(), lambda x:x),
+])
+
 class SASSRenderer(Renderer):
   device = "CUDA"
   suffix = "SASS"
   global_max, local_max, shared_max = CUDARenderer.global_max, CUDARenderer.local_max, CUDARenderer.shared_max
   tc_sm80 = [x for x in tc.cuda_sm80 if x.dtype_in in [dtypes.half, dtypes.float]]
+  extra_matcher = extra_matcher
   def __init__(self, arch:str, device="CUDA"):
     self.device, self.arch = device, arch
 
   def render(self, uops:list[UOp]) -> str:
     self.r = Allocator(num_ireg=16, num_freg=16)
-    k: list[str] = []
-    for u in uops:
-      print(u)
+    lines: list[str] = []
+    var_intervals: dict[UOp, Variable] = OrderedDict()
+    for i, u in enumerate(uops):
+      var = Variable(u, i, -1)
+      var_intervals[u] = var
+
+    for i, u in enumerate(uops):
+      if u.op in [Ops.SPECIAL, Ops.SINK]: continue
+      for src in u.src:
+        if src.dtype is not dtypes.void:
+          prev = var_intervals[src].end
+          var_intervals[src].end = max(prev, i)
+
+    for v in var_intervals.values():
+      if v.end == -1: v.end = len(uops)
+    self.r.uops = var_intervals
 
     for u in uops:
+      print(f'\n{u}')
       if (l:=rewriter.rewrite(u, ctx=self)) is None:
         raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
+      print(l)
       l = cast(list[str], l)
-      k.extend(l)
+      lines.extend(l)
       pass
     kernel: list[str] = []
+
     kernel = [
       "[B------:R-:W-:Y:S01]   ULDC.64 UR4, c[0x0][0x118] ;",
-      *k,
+      *lines,
       "[B------:R-:W-:-:S05]   EXIT ;",
     ]
 
     text = "\n".join(kernel)
+    print(text)
+    raise Exception()
     return text
 
 
