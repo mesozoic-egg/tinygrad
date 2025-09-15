@@ -434,13 +434,18 @@ class SASSRenderer(Renderer):
     self.r.uops = var_intervals
 
     for u in uops:
-      print(f'\n{u}')
-      if (l:=rewriter.rewrite(u, ctx=self)) is None:
-        raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
-      print(l)
-      l = cast(list[str], l)
-      lines.extend(l)
-      pass
+      if u.op is Ops.DEFINE_GLOBAL:
+        pass
+      elif u.op is Ops.SINK:
+        if u.arg is not None: name = u.arg.function_name
+      else:
+        print(f'\n{u}')
+        if (l:=rewriter.rewrite(u, ctx=self)) is None:
+          raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
+        print(l)
+        l = cast(list[str], l)
+        lines.extend(l)
+        pass
     kernel: list[str] = []
 
     kernel = [
@@ -451,7 +456,8 @@ class SASSRenderer(Renderer):
     ]
 
     text = "\n".join(kernel)
-    #raise Exception()
+    print(text)
+    raise Exception()
     return text
 
 
