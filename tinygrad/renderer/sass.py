@@ -435,6 +435,7 @@ class SASSRenderer(Renderer):
       if v.end == -1: v.end = len(uops)
     self.r.uops = var_intervals
 
+    name: str=None
     for u in uops:
       if u.op is Ops.DEFINE_GLOBAL:
         pass
@@ -449,8 +450,9 @@ class SASSRenderer(Renderer):
         lines.extend(l)
         pass
     kernel: list[str] = []
-
+    assert name is not None
     kernel = [
+      f"//{name}",
       "[B------:R-:W-:Y:S01]   ULDC.64 UR4, c[0x0][0x118] ;",
       "[B------:R-:W-:-:S01]   MOV R0, 0x4 ;",
       *lines,

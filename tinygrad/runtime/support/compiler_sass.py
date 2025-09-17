@@ -719,53 +719,32 @@ class SASSCompiler(Compiler):
     super().__init__(f"compile_{cache_key}_{self.arch}")
 
   def compile(self, src: str):
+    name = src.split('\n')[0][2:]
     textBytes = encode_instruction(src)
 
-    # elf dump section i=9
-    rel_debug_frame_bytes = \
-  b"\x44\x00\x00\x00\x00\x00\x00\x00\x02\x00\x00\x00\x06\x00\x00\x00"
-
-    # elf dump section i=4
-    debug_frame_bytes = \
-  b'\xff\xff\xff\xff\x24\x00\x00\x00\x00\x00\x00\x00\xff\xff\xff\xff'+\
-  b'\xff\xff\xff\xff\x03\x00\x04\x7c\xff\xff\xff\xff\x0f\x0c\x81\x80'+\
-  b'\x80\x28\x00\x08\xff\x81\x80\x28\x08\x81\x80\x80\x28\x00\x00\x00'+\
-  b'\xff\xff\xff\xff\x34\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'+\
-  b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x80\x01\x00\x00'+\
-  b'\x00\x00\x00\x00\x04\x04\x00\x00\x00\x04\x2c\x00\x00\x00\x0c\x81'+\
-  b'\x80\x80\x28\x00\x04\xfc\xff\xff\x3f\x00\x00\x00\x00\x00\x00\x00'
-
     output = assemble(
-      # cuobjdump
-      kernel_name='E_3',
+      kernel_name=name,
       register_count=255,
       param_cbank_val=(2, 0x180160),
       param_size=0x18,
       parameters=[
-        KernelParameter(index=0, ordinal=2, offset=0x10, 
+        KernelParameter(index=0, ordinal=0, offset=0, 
                         size=8, log_align=0, space=0,
                         cbank=0x1f, param_space='cbank'),
-
         KernelParameter(index=0, ordinal=1, offset=0x8, 
                         size=8, log_align=0, space=0,
                         cbank=0x1f, param_space='cbank'),
-
-        KernelParameter(index=0, ordinal=0, offset=0, 
+        KernelParameter(index=0, ordinal=2, offset=0x10, 
                         size=8, log_align=0, space=0,
-                        cbank=0x1f, param_space='cbank')
+                        cbank=0x1f, param_space='cbank'),
       ],
-      exit_instr_offset=0xb0,
       threadDim=(255,255,255),
-
-      # elf dump section header 10 'sh_size'
       constants_section_size=0x178,
-
-      # elf dump section header 11 'sh_info'
-      text_kernel_info=0xc000006,
-
+      exit_instr_offset=0,
+      text_kernel_info=0,
       textBytes=textBytes,
-      rel_debug_frame_bytes=rel_debug_frame_bytes,
-      debug_frame_bytes=debug_frame_bytes,
+      rel_debug_frame_bytes=b'',
+      debug_frame_bytes=b'',
     )
     b = output.getvalue()
     return b
