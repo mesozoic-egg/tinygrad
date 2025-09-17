@@ -282,6 +282,7 @@ class Compiled:
     self.compilers = cast(list[CompilerPairT], compilers or [(Renderer, Compiler)])
 
     envnames = [self._get_compiler_envvar(c) for r,c in self.compilers]
+    print(f"{envnames=}")
     enable_comps = set((en, comp_pair) for en, comp_pair in zip(envnames, self.compilers) if en is not None and getenv(en, -1) == 1)
     disable_comps = set((en, comp_pair) for en, comp_pair in zip(envnames, self.compilers) if en is not None and getenv(en, -1) == 0)
 

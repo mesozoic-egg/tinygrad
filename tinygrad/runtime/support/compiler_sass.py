@@ -738,7 +738,7 @@ class SASSCompiler(Compiler):
     output = assemble(
       # cuobjdump
       kernel_name='E_3',
-      register_count=12,
+      register_count=255,
       param_cbank_val=(2, 0x180160),
       param_size=0x18,
       parameters=[

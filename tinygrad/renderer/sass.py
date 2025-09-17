@@ -22,7 +22,7 @@ class RegMeta(type):
     return instances[id]
 
 class RegBase(metaclass=RegMeta):
-  size: int # bits
+  size: int=64 # bits
   def __init__(self, id: int): self.id = id
   def __repr__(self): return self.render64()
   def render8(self): return f"R{self.id}.B8"
@@ -40,7 +40,10 @@ def _index(ctx, x):
   src1_str = src1_reg.render32()
   reg_str = reg.render32()
   cbank = 0x160 + src0.arg * 8
-  return [ f"[B------:R-:W-:-:S01] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}]" ]
+  return [
+    f"[B------:R-:W-:-:S01] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}];",
+    f"[B------:R-:W-:Y:S00] NOP;",
+    ]
 
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
@@ -51,7 +54,7 @@ rewriter = PatternMatcher([
     f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {x.arg:#x} ;"]),
   (UPat(Ops.INDEX, name='x'), _index),
   (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
-    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][R2.64];"
+    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
   ]),
   (UPat(Ops.MUL, name='x'), lambda ctx, x: [
     f"[B0-----:R-:W-:-:S04] FMUL {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"
@@ -143,7 +146,7 @@ x86_params: dict[int, int] = {
 class AllocatorPool:
   def __init__(self, reg_type: type[RegBase], num: int):
     self.reg_type, self.num = reg_type, num
-    self._pool: list[RegBase] = [reg_type(i) for i in range(num)]
+    self._pool: list[RegBase] = [reg_type(i) for i in range(0, num, 2)]
     self._acquired: dict[RegBase, set[Variable]] = defaultdict(set)
 
   def __repr__(self):
@@ -201,10 +204,9 @@ class AllocatorPool:
             print(f"\t{_reg}: {vars}")
           raise Exception(f"Inconsistent var.reg: {var.reg} and acquired record: {reg}")
 class Allocator:
-  def __init__(self, num_ireg: int, num_freg: int):
+  def __init__(self, num):
     self.pools: dict[type[RegBase], AllocatorPool] = {
-      IReg: AllocatorPool(IReg, num_ireg),
-      FReg: AllocatorPool(FReg, num_ireg),
+      IReg: AllocatorPool(IReg, num),
     }
     self.uops: dict[UOp, Variable] = {}
     self.reserved: dict[RegBase, int] = {}
@@ -415,7 +417,7 @@ class SASSRenderer(Renderer):
     self.device, self.arch = device, arch
 
   def render(self, uops:list[UOp]) -> str:
-    self.r = Allocator(num_ireg=16, num_freg=16)
+    self.r = Allocator(32)
     lines: list[str] = []
     var_intervals: dict[UOp, Variable] = OrderedDict()
     for i, u in enumerate(uops):
@@ -456,8 +458,8 @@ class SASSRenderer(Renderer):
     ]
 
     text = "\n".join(kernel)
-    print(text)
-    raise Exception()
+    #print(text)
+    #raise Exception()
     return text
 
 
