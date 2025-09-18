@@ -54,6 +54,36 @@ def _special(ctx, x):
   dim = ['X', 'Y', 'Z'][int(dim_str)]
   return [f"[B------:R-:W-:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};"]
 
+class _AluOps:
+  def __init__(self, items: dict[tuple[Union[Ops, DType, int], ...], str]):
+    self._root = {}
+    for (key, value) in items.items():
+      node = self._root
+      for i, part in enumerate(key): node = node.setdefault(part, {})
+      node[None] = value
+    
+  def get(self, key_tuple: tuple[Union[Ops, type[RegBase], int], ...]) -> str:
+    node = self._root
+    best_match = None
+    for i, part in enumerate(key_tuple):
+      if part not in node: break
+      node = node[part]
+      if None in node: best_match = node[None]
+    if best_match is None: raise Exception(f"No match found {key_tuple=}")
+    return best_match
+
+
+def alu(ctx, x):
+  _map = _AluOps({
+    (Ops.MUL, dtypes.float32): 'FMUL',
+    (Ops.MUL, dtypes.int32): 'FMUL',
+    (Ops.ADD, dtypes.int32): 'IADD',
+  })
+  operator = _map.get((x.op, x.dtype))
+  regs = ctx.r.assign_multiple([x, *x.src], IReg)
+  return [f"[B0-----:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"]
+
+
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
   (UPat(Ops.SPECIAL, name='x'), _special),
@@ -63,9 +93,7 @@ rewriter = PatternMatcher([
   (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
     f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
   ]),
-  (UPat(Ops.MUL, name='x'), lambda ctx, x: [
-    f"[B0-----:R-:W-:-:S04] FMUL {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"
-  ]),
+  (UPat(GroupOp.ALU, name='x'), alu),
   (UPat(Ops.STORE, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
   ]),

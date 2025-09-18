@@ -103,9 +103,13 @@ class TestOps(unittest.TestCase):
     assert type(c) is Tensor
     np.testing.assert_equal(c.numpy(), a_data*b_data)
   
-  def test_arange(self):
+  def test_arange_noopt(self):
     with Context(NOOPT=1):
       a = Tensor.arange(16)
       assert type(a) == Tensor
       np.testing.assert_equal(a.numpy(), np.arange(16).astype(np.int32))
+  def test_arange(self):
+    a = Tensor.arange(16)
+    assert type(a) == Tensor
+    np.testing.assert_equal(a.numpy(), np.arange(16).astype(np.int32))
 
