@@ -77,12 +77,16 @@ def alu(ctx, x):
   _map = _AluOps({
     (Ops.MUL, dtypes.float32): 'FMUL',
     (Ops.MUL, dtypes.int32): 'FMUL',
-    (Ops.ADD, dtypes.int32): 'IADD',
   })
   operator = _map.get((x.op, x.dtype))
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   return [f"[B0-----:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"]
 
+def add(ctx, x):
+  operator = 'IADD3'
+  regs = ctx.r.assign_multiple([x, *x.src], IReg)
+  regs_str = [i.render32() for i in regs]
+  return [f"[B0-----:R-:W-:-:S04] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;"]
 
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
@@ -93,6 +97,7 @@ rewriter = PatternMatcher([
   (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
     f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
   ]),
+  (UPat(Ops.ADD, name='x'), add),
   (UPat(GroupOp.ALU, name='x'), alu),
   (UPat(Ops.STORE, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
