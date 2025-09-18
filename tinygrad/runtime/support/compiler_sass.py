@@ -125,10 +125,6 @@ class CuControlCode:
 
     return code
 
-parser = argparse.ArgumentParser()
-parser.add_argument("-o", "--outfile", help="cubin file")
-args = parser.parse_args()
-output_filename = args.outfile
 EIATTR_TAGS = {
   'EIATTR_REGCOUNT': b'\x04\x2f',        # Format 4, Type 47
   'EIATTR_FRAME_SIZE': b'\x04\x11',      # Format 4, Type 48  

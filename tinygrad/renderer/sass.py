@@ -1,5 +1,5 @@
 from typing import cast, Callable, Union, Mapping, Optional, List
-import struct, dataclasses
+import struct, dataclasses, re
 from collections import defaultdict, OrderedDict
 from tinygrad.codegen.opt import tc
 from tinygrad.uop.ops import Ops, UOp, PatternMatcher, UPat, GroupOp
@@ -45,11 +45,18 @@ def _index(ctx, x):
     f"[B------:R-:W-:Y:S00] NOP;",
     ]
 
+def _special(ctx, x):
+  idx_pat  = re.compile(r'^(g|l)idx(\d)')
+  idx_match = idx_pat.match(x.arg)
+  assert idx_match is not None, f"{x.arg=}"
+  idx_type, dim_str = idx_match.groups()
+  reg_type = "SR_TID" if idx_type == "l" else "SR_CTAID"
+  dim = ['X', 'Y', 'Z'][int(dim_str)]
+  return [f"[B------:R-:W-:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};"]
+
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
-  (UPat(Ops.SPECIAL, name='x'), lambda ctx, x: [
-    f"[B------:R-:W-:-:S01]   S2R {ctx.r.assign_i32(x)}, SR_TID.X ;"
-  ]),
+  (UPat(Ops.SPECIAL, name='x'), _special),
   (UPat(Ops.CONST, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {x.arg:#x} ;"]),
   (UPat(Ops.INDEX, name='x'), _index),
