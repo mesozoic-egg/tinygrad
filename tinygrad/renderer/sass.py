@@ -40,8 +40,9 @@ def _index(ctx, x):
   reg_str = reg.render32()
   src1_str = src1_reg.render32()
   cbank = 0x160 + src0.arg * 8
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
   return [
-    f"[B------:R-:W-:-:S04] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}];",
+    f"[B{barrier_prefix}:R-:W-:-:S04] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}];",
     f"[B------:R-:W-:Y:S00] NOP;",
     ]
 
@@ -52,9 +53,12 @@ def _special(ctx, x):
   idx_type, dim_str = idx_match.groups()
   reg_type = "SR_TID" if idx_type == "l" else "SR_CTAID"
   dim = ['X', 'Y', 'Z'][int(dim_str)]
-  return [f"[B------:R-:W0:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
-    f"[B0-----:R-:W-:Y:S01] NOP;",
-          ]
+
+  barrier_idx = ctx.r.get_barrier_idx(x)
+
+  return [f"[B------:R-:W{barrier_idx}:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
+    f"[B{barrier_idx}-----:R-:W-:Y:S01] NOP;",
+  ]
 
 class _AluOps:
   def __init__(self, items: dict[tuple[Union[Ops, DType, int], ...], str]):
@@ -82,7 +86,8 @@ def alu(ctx, x):
   })
   operator = _map.get((x.op, x.dtype))
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
-  return [f"[B0-----:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};",
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
+  return [f"[B{barrier_prefix}:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};",
           f"[B------:R-:W-:Y:S00] NOP;"
   ]
 
@@ -90,15 +95,17 @@ def add(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
-  return [f"[B0-----:R-:W-:-:S01] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
+  return [f"[B{barrier_prefix}:R-:W-:-:S01] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
     f"[B------:R-:W-:Y:S00] NOP;"
   ]
 def imul(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
   return [
-    f"[B0-----:R-:W-:-:S01] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    f"[B{barrier_prefix}:R-:W-:-:S01] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
     # B0 is required here because it uses the result of R2!!!!
     f"[B------:R-:W-:Y:S00] NOP;"
     ]
@@ -289,13 +296,18 @@ class Allocator:
     self.barrier_dependencies[consumer].append(barrier_idx)
   
   def get_barrier_prefix(self, uop: UOp):
-    if not self.barrier_dependencies.get(uop)
+    if not self.barrier_dependencies.get(uop):
       return '------'
     indices = self.barrier_dependencies[uop]
     barrier: list[str] = ['-', '-', '-', '-','-', '-']
     for i in indices:
       barrier[i] = str(i)
     return ''.join(barrier)
+
+  def get_barrier_idx(self, uop: UOp):
+    assert uop in self.barrier_producers
+    barrier_idx = self.barrier_producers[uop]
+    return barrier_idx
 
   def bookkeeping(self):
     for pool in self.pools.values():
@@ -518,7 +530,7 @@ class SASSRenderer(Renderer):
 
     for u in uops:
       if u.op == Ops.SPECIAL:
-        pass
+        self.r.assign_barrier(u)
       for src in u.src:
         if src.op == Ops.SPECIAL:
           self.r.add_dependency(u, src)
