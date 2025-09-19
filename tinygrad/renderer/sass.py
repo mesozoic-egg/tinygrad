@@ -272,6 +272,31 @@ class Allocator:
     self.kernel: list[str] = []
     self.tracked_regs: list[RegBase] = []
 
+    self.barrier_counter = 0
+    self.barrier_dependencies: dict[UOp, list[int]] = defaultdict(list)
+    self.barrier_producers: dict[UOp, int] = {}
+
+  def assign_barrier(self, producer: UOp):
+    idx = self.barrier_counter
+    self.barrier_producers[producer] = idx
+    self.barrier_counter += 1
+    assert self.barrier_counter < 6
+    return idx
+  
+  def add_dependency(self, consumer: UOp, producer: UOp):
+    assert producer in self.barrier_producers
+    barrier_idx = self.barrier_producers[producer]
+    self.barrier_dependencies[consumer].append(barrier_idx)
+  
+  def get_barrier_prefix(self, uop: UOp):
+    if not self.barrier_dependencies.get(uop)
+      return '------'
+    indices = self.barrier_dependencies[uop]
+    barrier: list[str] = ['-', '-', '-', '-','-', '-']
+    for i in indices:
+      barrier[i] = str(i)
+    return ''.join(barrier)
+
   def bookkeeping(self):
     for pool in self.pools.values():
       pool.bookkeeping()
@@ -491,7 +516,14 @@ class SASSRenderer(Renderer):
       if v.end == -1: v.end = len(uops)
     self.r.uops = var_intervals
 
-    name: str=None
+    for u in uops:
+      if u.op == Ops.SPECIAL:
+        pass
+      for src in u.src:
+        if src.op == Ops.SPECIAL:
+          self.r.add_dependency(u, src)
+
+    name: Union[str, None] = None
     for u in uops:
       if u.op is Ops.DEFINE_GLOBAL:
         pass
