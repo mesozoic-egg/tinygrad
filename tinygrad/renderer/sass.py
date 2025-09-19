@@ -82,21 +82,25 @@ def alu(ctx, x):
   })
   operator = _map.get((x.op, x.dtype))
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
-  return [f"[B0-----:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};"]
+  return [f"[B0-----:R-:W-:-:S04] {operator} {ctx.r.assign_i32(x)}, {ctx.r.assign_i32(x.src[0])}, {ctx.r.assign_i32(x.src[1])};",
+          f"[B------:R-:W-:Y:S00] NOP;"
+  ]
 
 def add(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
-  return [f"[B0-----:R-:W-:-:S04] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
-    f"[B------:R-:W-:Y:S00] NOP;", ]
+  return [f"[B0-----:R-:W-:-:S01] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    f"[B------:R-:W-:Y:S00] NOP;"
+  ]
 def imul(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
   return [
-    f"[B0-----:R-:W-:-:S04] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    f"[B0-----:R-:W-:-:S01] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
     # B0 is required here because it uses the result of R2!!!!
+    f"[B------:R-:W-:Y:S00] NOP;"
     ]
 
 rewriter = PatternMatcher([
@@ -512,51 +516,5 @@ class SASSRenderer(Renderer):
     ]
 
     text = "\n".join(kernel)
-    #print(text)
-    #raise Exception()
     return text
-
-
-
-text = """
-  E_3:
-  .text.E_3:
-// Load the 64-bit descriptor that defines HOW to access global memory
-// (e.g., cache policy) into uniform register UR4. This is the same for all threads.
-      [B------:R-:W-:Y:S01]   ULDC.64 UR4, c[0x0][0x118] ;
-
-// Get the thread ID (in R6) and the stride for floats (4, in R7)
-      [B------:R-:W-:-:S01]   S2R R6, SR_TID.X ;
-      [B------:R-:W-:-:S01]   MOV R7, 0x4 ;
-
-// --- Calculate Addresses ---
-// Calculate the 64-bit address for this thread's element in each array.
-// The constants (0x160, 0x168, 0x170) hold the base pointers (data0, data1, data2).
-// These instructions answer "WHERE" to access memory.
-      [B------:R-:W-:-:S01]   IMAD.WIDE R10, R6, R7, c[0x0][0x160] ;
-      [B------:R-:W-:-:S01]   IMAD.WIDE R2, R6, R7, c[0x0][0x168] ;
-      [B------:R-:W-:-:S01]   IMAD.WIDE R4, R6, R7, c[0x0][0x170] ;
-
-// --- Perform the Operation ---
-// 1. Load from the calculated addresses using the descriptor in UR4
-      [B------:R-:W0:-:S05]   LDG.E R2, desc[UR4][R2.64] ;
-      [B------:R-:W0:-:S05]   LDG.E R5, desc[UR4][R4.64] ;
-
-// 2. Multiply the loaded values
-      [B0-----:R-:W-:-:S04]   FMUL R9, R2, R5 ;
-
-// 3. Store the result back to memory
-      [B------:R-:W-:-:S01]   STG.E desc[UR4][R10.64], R9 ;
-
-   )   [B------:R-:W-:-:S05]   EXIT ;
-  """
-"""
-extern "C" __global__ void __launch_bounds__(3) E_3(float* data0_3, float* data1_3, float* data2_3) {
-  int lidx0 = threadIdx.x; /* 3 */
-  float val0 = (*(data1_3+lidx0));
-  float val1 = (*(data2_3+lidx0));
-  *(data0_3+lidx0) = (val0*val1);
-}
-"""
-
 
