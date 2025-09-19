@@ -35,13 +35,13 @@ class FReg(RegBase): pass
 
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
-  regs = ctx.r.assign_multiple([src1, x], IReg)
-  src1_reg, reg = regs
-  src1_str = src1_reg.render32()
+  regs = ctx.r.assign_multiple([x, src1], IReg)
+  reg, src1_reg = regs
   reg_str = reg.render32()
+  src1_str = src1_reg.render32()
   cbank = 0x160 + src0.arg * 8
   return [
-    f"[B------:R-:W-:-:S01] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}];",
+    f"[B------:R-:W-:-:S04] IMAD.WIDE {reg_str}, {src1_str}, R0, c[0x0][{cbank:#x}];",
     f"[B------:R-:W-:Y:S00] NOP;",
     ]
 
@@ -52,7 +52,9 @@ def _special(ctx, x):
   idx_type, dim_str = idx_match.groups()
   reg_type = "SR_TID" if idx_type == "l" else "SR_CTAID"
   dim = ['X', 'Y', 'Z'][int(dim_str)]
-  return [f"[B------:R-:W-:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};"]
+  return [f"[B------:R-:W0:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
+    f"[B0-----:R-:W-:Y:S01] NOP;",
+          ]
 
 class _AluOps:
   def __init__(self, items: dict[tuple[Union[Ops, DType, int], ...], str]):
@@ -86,7 +88,16 @@ def add(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
-  return [f"[B0-----:R-:W-:-:S04] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;"]
+  return [f"[B0-----:R-:W-:-:S04] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    f"[B------:R-:W-:Y:S00] NOP;", ]
+def imul(ctx, x):
+  operator = 'IADD3'
+  regs = ctx.r.assign_multiple([x, *x.src], IReg)
+  regs_str = [i.render32() for i in regs]
+  return [
+    f"[B0-----:R-:W-:-:S04] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    # B0 is required here because it uses the result of R2!!!!
+    ]
 
 rewriter = PatternMatcher([
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
@@ -98,9 +109,10 @@ rewriter = PatternMatcher([
     f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
   ]),
   (UPat(Ops.ADD, name='x'), add),
+  (UPat(Ops.MUL, dtype=dtypes.int32, name='x'), imul),
   (UPat(GroupOp.ALU, name='x'), alu),
   (UPat(Ops.STORE, name='x'), lambda ctx, x: [
-    f"[B------:R-:W-:-:S01] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
+    f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
   ]),
   (UPat(Ops.SINK, name='x'), lambda ctx, x: [f""]),
 ])
