@@ -110,11 +110,23 @@ def imul(ctx, x):
     f"[B------:R-:W-:Y:S00] NOP;"
     ]
 
+def define_reg(ctx, x):
+  acc = ctx.r.assign_i32(x)
+  return [f"MOV {acc}, RZ;"]
+
+def render_imm(x: Union[int, float]):
+  if type(x) is int: return f"{x:#x}"
+  f32 = struct.pack("<f", x)
+  f32_as_int = struct.unpack('<I', f32)[0]
+  print(f"{f32_as_int=}")
+  return f"{f32_as_int:#x}"
+
 rewriter = PatternMatcher([
+  (UPat(Ops.DEFINE_REG, name="x"), define_reg),
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
   (UPat(Ops.SPECIAL, name='x'), _special),
   (UPat(Ops.CONST, name='x'), lambda ctx, x: [
-    f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {x.arg:#x} ;"]),
+    f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {render_imm(x.arg)} ;"]),
   (UPat(Ops.INDEX, name='x'), _index),
   (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
     f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
