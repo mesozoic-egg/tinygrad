@@ -112,4 +112,18 @@ class TestOps(unittest.TestCase):
     a = Tensor.arange(16)
     assert type(a) == Tensor
     np.testing.assert_equal(a.numpy(), np.arange(16).astype(np.int32))
+  def test_matmul_f32_noopt(self):
+    with Context(DEBUG=0):
+      a = Tensor.arange(12, device="PYTHON", dtype=dtypes.float32).reshape((3,4)).realize()
+      b = Tensor.arange(8, device="PYTHON", dtype=dtypes.float32).reshape((4,2)).realize()
+      a = a.to(Device.DEFAULT)
+      b = b.to(Device.DEFAULT)
+    c = a.dot(b)
+    with Context(NOOPT=1):
+      np.testing.assert_equal(c.numpy(), np.array([
+        [28, 34],
+        [76, 98],
+        [124, 162]
+        ], dtype=np.float32))
+
 

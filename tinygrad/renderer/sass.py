@@ -536,6 +536,7 @@ class SASSRenderer(Renderer):
           self.r.add_dependency(u, src)
 
     name: Union[str, None] = None
+    print(uops[-1])
     for u in uops:
       if u.op is Ops.DEFINE_GLOBAL:
         pass
