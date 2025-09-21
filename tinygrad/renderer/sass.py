@@ -140,6 +140,24 @@ def endrange(ctx, x):
     f"[B{barrier_prefix}:R-:W-:-:S05] @P0 BRA `(.LOOP_{acc.arg[0]});",
   ]
 
+def store(ctx, x):
+  index = x.src[0]
+  if index.src[0].op is Ops.DEFINE_REG:
+    return []
+  return [
+    f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
+  ]
+
+def load(ctx, x):
+  index = x.src[0]
+  if index.src[0].op is Ops.DEFINE_REG:
+    #ctx.r.share(x.src[1], x)
+    return []
+  return [
+    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
+  ]
+
+
 rewriter = PatternMatcher([
   (UPat(Ops.RANGE, name="x"), _range),
   (UPat(Ops.ENDRANGE, name="x"), endrange),
@@ -149,15 +167,11 @@ rewriter = PatternMatcher([
   (UPat(Ops.CONST, name='x'), lambda ctx, x: [
     f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {render_imm(x.arg)} ;"]),
   (UPat(Ops.INDEX, name='x'), _index),
-  (UPat(Ops.LOAD, name='x'), lambda ctx, x: [
-    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
-  ]),
+  (UPat(Ops.LOAD, name='x'), load),
   (UPat(Ops.ADD, name='x'), add),
   (UPat(Ops.MUL, dtype=dtypes.int32, name='x'), imul),
   (UPat(GroupOp.ALU, name='x'), alu),
-  (UPat(Ops.STORE, name='x'), lambda ctx, x: [
-    f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
-  ]),
+  (UPat(Ops.STORE, name='x'), store),
   (UPat(Ops.SINK, name='x'), lambda ctx, x: [f""]),
 ])
 
