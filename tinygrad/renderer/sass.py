@@ -33,8 +33,12 @@ class RegBase(metaclass=RegMeta):
 class IReg(RegBase): pass
 class FReg(RegBase): pass
 
+
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
+  if src0.op is Ops.DEFINE_REG:
+    ctx.r.share(x, src0)
+    return []
   regs = ctx.r.assign_multiple([x, src1], IReg)
   reg, src1_reg = regs
   reg_str = reg.render32()
@@ -57,7 +61,6 @@ def _special(ctx, x):
   barrier_idx = ctx.r.get_barrier_idx(x)
 
   return [f"[B------:R-:W{barrier_idx}:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
-    f"[B{barrier_idx}-----:R-:W-:Y:S01] NOP;",
   ]
 
 class _AluOps:
@@ -112,16 +115,34 @@ def imul(ctx, x):
 
 def define_reg(ctx, x):
   acc = ctx.r.assign_i32(x)
-  return [f"MOV {acc}, RZ;"]
+  return [f"[B------:R-:W-:-:S01] MOV {acc}, RZ;"]
 
 def render_imm(x: Union[int, float]):
   if type(x) is int: return f"{x:#x}"
   f32 = struct.pack("<f", x)
   f32_as_int = struct.unpack('<I', f32)[0]
-  print(f"{f32_as_int=}")
   return f"{f32_as_int:#x}"
 
+def _range(ctx, x):
+  counter = ctx.r.assign(x, reg_type=IReg).render32()
+  return [
+    f"[B------:R-:W-:-:S01] MOV {counter}, RZ;",
+    f".LOOP_{x.arg[0]}:",
+  ]
+
+def endrange(ctx, x):
+  acc, end = x.src[0], x.src[0].src[0]
+  acc_reg = ctx.r.assign(acc, reg_type=IReg).render32()
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
+  return [
+    f"[B{barrier_prefix}:R-:W-:-:S04] IADD3 {acc_reg}, {acc_reg}, 0x1, RZ;",
+    f"[B{barrier_prefix}:R-:W-:-:S04] ISETP.NE.AND P0, PT, {acc_reg}, {end.arg:#x}, PT;",
+    f"[B{barrier_prefix}:R-:W-:-:S05] @P0 BRA `(.LOOP_{acc.arg[0]});",
+  ]
+
 rewriter = PatternMatcher([
+  (UPat(Ops.RANGE, name="x"), _range),
+  (UPat(Ops.ENDRANGE, name="x"), endrange),
   (UPat(Ops.DEFINE_REG, name="x"), define_reg),
   (UPat(Ops.DEFINE_GLOBAL, name='x'), lambda ctx, x: [f""]),
   (UPat(Ops.SPECIAL, name='x'), _special),
@@ -508,7 +529,7 @@ class Allocator:
     return vars
 
 extra_matcher = PatternMatcher([
-  #(UPat(Ops.INDEX, name='x', src=(UPat(), UPat())), lambda x: x.replace(src=(*x.src, UOp(Ops.CONST, dtype=dtypes.int, arg=4)))),
+  #(UPat(Ops.INDEX, src=(UPat(name="reg"), UPat())), lambda reg: reg),
   #(UPat(Ops.SPECIAL, ),
 ])
 
@@ -522,7 +543,7 @@ class SASSRenderer(Renderer):
     self.device, self.arch = device, arch
 
   def render(self, uops:list[UOp]) -> str:
-    self.r = Allocator(32)
+    self.r = Allocator(128)
     lines: list[str] = []
     var_intervals: dict[UOp, Variable] = OrderedDict()
     for i, u in enumerate(uops):
@@ -549,13 +570,13 @@ class SASSRenderer(Renderer):
 
     name: Union[str, None] = None
     print(uops[-1])
-    for u in uops:
-      if u.op is Ops.DEFINE_GLOBAL:
+    for i, u in enumerate(uops):
+      if u.op in [Ops.DEFINE_GLOBAL, Ops.NOOP]:
         pass
       elif u.op is Ops.SINK:
         if u.arg is not None: name = u.arg.function_name
       else:
-        print(f'\n{u}')
+        print(f'\n{i} {u}')
         if (l:=rewriter.rewrite(u, ctx=self)) is None:
           raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
         print(l)
