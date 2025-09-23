@@ -99,7 +99,7 @@ def add(ctx, x):
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
   regs_str = [i.render32() for i in regs]
   barrier_prefix = ctx.r.get_barrier_prefix(x)
-  return [f"[B{barrier_prefix}:R-:W-:-:S01] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+  return [f"[B{barrier_prefix}:R-:W-:-:S05] {operator} {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
     f"[B------:R-:W-:Y:S00] NOP;"
   ]
 def imul(ctx, x):
@@ -135,8 +135,10 @@ def endrange(ctx, x):
   acc_reg = ctx.r.assign(acc, reg_type=IReg).render32()
   barrier_prefix = ctx.r.get_barrier_prefix(x)
   return [
-    f"[B{barrier_prefix}:R-:W-:-:S04] IADD3 {acc_reg}, {acc_reg}, 0x1, RZ;",
-    f"[B{barrier_prefix}:R-:W-:-:S04] ISETP.NE.AND P0, PT, {acc_reg}, {end.arg:#x}, PT;",
+    f"[B{barrier_prefix}:R-:W-:-:S05] IADD3 {acc_reg}, {acc_reg}, 0x1, RZ;",
+    f"[B------:R-:W-:Y:S00] NOP;",
+    f"[B{barrier_prefix}:R-:W-:-:S12] ISETP.NE.AND P0, PT, {acc_reg}, {end.arg:#x}, PT;",
+    f"[B------:R-:W-:Y:S00] NOP;",
     f"[B{barrier_prefix}:R-:W-:-:S05] @P0 BRA `(.LOOP_{acc.arg[0]});",
   ]
 
@@ -145,7 +147,8 @@ def store(ctx, x):
   if index.src[0].op is Ops.DEFINE_REG:
     return []
   return [
-    f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};"
+    f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};",
+    f"[B------:R-:W-:Y:S00] NOP;",
   ]
 
 def load(ctx, x):
