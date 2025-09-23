@@ -60,7 +60,8 @@ def _special(ctx, x):
 
   barrier_idx = ctx.r.get_barrier_idx(x)
 
-  return [f"[B------:R-:W{barrier_idx}:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
+  return [
+    f"[B------:R-:W{barrier_idx}:-:S01]   S2R {ctx.r.assign_i32(x)}, {reg_type}.{dim};",
   ]
 
 class _AluOps:
@@ -596,7 +597,7 @@ class SASSRenderer(Renderer):
         print(f'\n{i} {u}')
         if (l:=rewriter.rewrite(u, ctx=self)) is None:
           raise RuntimeError(f"failed to render {u.op} with {u.dtype} srcs {[x.dtype for x in u.src]}")
-        print(l)
+        for _l in l: print(_l)
         l = cast(list[str], l)
         lines.extend(l)
         pass
