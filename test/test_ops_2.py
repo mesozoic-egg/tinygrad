@@ -112,7 +112,7 @@ class TestOps(unittest.TestCase):
     a = Tensor.arange(16)
     assert type(a) == Tensor
     np.testing.assert_equal(a.numpy(), np.arange(16).astype(np.int32))
-  @skipU("MANUAL")
+
   def test_matmul_f32_noopt(self):
     with Context(DEBUG=0):
       a = Tensor.arange(12, device="PYTHON", dtype=dtypes.float32).reshape((3,4)).realize()

@@ -37,7 +37,6 @@ class FReg(RegBase): pass
 def _index(ctx, x):
   src0, src1 = x.src[0], x.src[1]
   if src0.op is Ops.DEFINE_REG:
-    ctx.r.share(x, src0)
     return []
   regs = ctx.r.assign_multiple([x, src1], IReg)
   reg, src1_reg = regs
@@ -95,6 +94,15 @@ def alu(ctx, x):
           f"[B------:R-:W-:Y:S00] NOP;"
   ]
 
+def fadd(ctx, x):
+  regs = ctx.r.assign_multiple([x, *x.src], IReg)
+  regs_str = [i.render32() for i in regs]
+  barrier_prefix = ctx.r.get_barrier_prefix(x)
+  return [f"[B{barrier_prefix}:R-:W-:-:S05] FADD {regs_str[0]}, {regs_str[1]}, {regs_str[2]};",
+    f"[B------:R-:W-:Y:S00] NOP;"
+  ]
+
+
 def add(ctx, x):
   operator = 'IADD3'
   regs = ctx.r.assign_multiple([x, *x.src], IReg)
@@ -109,14 +117,14 @@ def imul(ctx, x):
   regs_str = [i.render32() for i in regs]
   barrier_prefix = ctx.r.get_barrier_prefix(x)
   return [
-    f"[B{barrier_prefix}:R-:W-:-:S01] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
+    f"[B{barrier_prefix}:R-:W-:-:S05] IMAD {regs_str[0]}, {regs_str[1]}, {regs_str[2]}, RZ;",
     # B0 is required here because it uses the result of R2!!!!
     f"[B------:R-:W-:Y:S00] NOP;"
     ]
 
 def define_reg(ctx, x):
-  acc = ctx.r.assign_i32(x)
-  return [f"[B------:R-:W-:-:S01] MOV {acc}, RZ;"]
+  ctx.r.assign_i32(x)
+  return []
 
 def render_imm(x: Union[int, float]):
   if type(x) is int: return f"{x:#x}"
@@ -146,7 +154,14 @@ def endrange(ctx, x):
 def store(ctx, x):
   index = x.src[0]
   if index.src[0].op is Ops.DEFINE_REG:
-    return []
+    ctx.r.share(x, index.src[0])
+    dst = ctx.r.assign_i32(x)
+    src = x.src[1]
+    if src.op == Ops.CONST:
+      src_str = "RZ"
+    else:
+      src_str = ctx.r.assign_i32(src)
+    return [f"[B------:R-:W-:-:S01] MOV {dst}, {src_str};"]
   return [
     f"[B------:R-:W-:-:S05] STG.E desc[UR4][{ctx.r.assign_i64(x.src[0])}], {ctx.r.assign_i32(x.src[1])};",
     f"[B------:R-:W-:Y:S00] NOP;",
@@ -155,10 +170,11 @@ def store(ctx, x):
 def load(ctx, x):
   index = x.src[0]
   if index.src[0].op is Ops.DEFINE_REG:
-    #ctx.r.share(x.src[1], x)
+    ctx.r.share(x, x.src[1])
     return []
   return [
-    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];"
+    f"[B------:R-:W0:-:S05] LDG.E {ctx.r.assign_i32(x)}, desc[UR4][{ctx.r.assign_i32(x.src[0])}.64];",
+    f"[B------:R-:W-:Y:S00] NOP;",
   ]
 
 
@@ -172,6 +188,7 @@ rewriter = PatternMatcher([
     f"[B------:R-:W-:-:S01]   MOV {ctx.r.assign_i32(x)}, {render_imm(x.arg)} ;"]),
   (UPat(Ops.INDEX, name='x'), _index),
   (UPat(Ops.LOAD, name='x'), load),
+  (UPat(Ops.ADD, dtype=dtypes.float, name='x'), fadd),
   (UPat(Ops.ADD, name='x'), add),
   (UPat(Ops.MUL, dtype=dtypes.int32, name='x'), imul),
   (UPat(GroupOp.ALU, name='x'), alu),
